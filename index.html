@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdivinIA: El Ojo de la Máquina</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="contenedor-principal">
+        <!-- Header con título estilo blueprint -->
+        <header class="header-blueprint">
+            <div class="linea-decorativa"></div>
+            <h1 class="titulo-principal">
+                <span class="etiqueta">PROYECTO:</span>
+                <span class="nombre">ADIVINIA</span>
+                <span class="subtitulo">EL OJO DE LA MÁQUINA</span>
+            </h1>
+            <div class="linea-decorativa"></div>
+            <p class="descripcion">Dibuja un objeto y la IA intentará adivinar qué es en tiempo real</p>
+        </header>
+
+        <main class="layout-principal">
+            <!-- LADO IZQUIERDO: INTERACCIÓN / LIENZO -->
+            <section class="panel panel-izquierdo">
+                <div class="panel-header">
+                    <span class="panel-titulo">ZONA DE DIBUJO</span>
+                    <span class="panel-codigo">[INPUT_LAYER]</span>
+                </div>
+                
+                <div class="canvas-contenedor">
+                    <canvas id="canvas-dibujo" width="500" height="500" class="canvas-dibujo"></canvas>
+                    <div class="canvas-overlay" id="canvas-overlay">
+                        <svg class="grid-svg" viewBox="0 0 500 500">
+                            <defs>
+                                <pattern id="grid-pattern" width="50" height="50" patternUnits="userSpaceOnUse">
+                                    <path d="M 50 0 L 0 0 0 50" fill="none" stroke="var(--color-grid)" stroke-width="0.5"/>
+                                </pattern>
+                            </defs>
+                            <rect width="500" height="500" fill="url(#grid-pattern)"/>
+                        </svg>
+                    </div>
+                </div>
+                
+                <div class="controles-dibujo">
+                    <button id="btn-limpiar" class="btn-blueprint btn-primario" type="button">
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                        <span>LIMPIAR LIENZO</span>
+                        <span class="btn-atajo">[ESPACIO]</span>
+                    </button>
+                    <button id="btn-voz" class="btn-blueprint btn-secundario" type="button" title="Activar o desactivar lectura de voz">
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                        </svg>
+                        <span>VOZ</span>
+                    </button>
+                </div>
+                
+                <div class="estado-dibujo" id="estado-dibujo">
+                    <span class="indicador"></span>
+                    <span>Esperando trazo...</span>
+                </div>
+            </section>
+
+            <!-- LADO DERECHO: EL CEREBRO DE LA IA -->
+            <section class="panel panel-derecho">
+                <div class="panel-header">
+                    <span class="panel-titulo">CEREBRO DE LA IA</span>
+                    <span class="panel-codigo">[HIDDEN_LAYERS]</span>
+                </div>
+
+                <!-- Visualizador 28x28 en tiempo real -->
+                <div class="seccion-visualizador">
+                    <div class="visualizador-header">
+                        <h3>Lo que ve la IA (28×28)</h3>
+                        <span class="badge">TENSOR INPUT</span>
+                    </div>
+                    <div class="visualizador-contenedor">
+                        <canvas id="canvas-visualizador" width="280" height="280" class="canvas-visualizador"></canvas>
+                        <div class="visualizador-info">
+                            <div class="info-item">
+                                <span class="info-label">Dimensiones:</span>
+                                <span class="info-valor">28 × 28 px</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Canales:</span>
+                                <span class="info-valor">1 (Grises)</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Rango:</span>
+                                <span class="info-valor">[0, 1]</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Predicciones en tiempo real -->
+                <div class="seccion-predicciones">
+                    <div class="predicciones-header">
+                        <h3>Predicciones en Tiempo Real</h3>
+                        <span class="badge" id="badge-estado">CARGA MODELO</span>
+                    </div>
+                    
+                    <div class="predicciones-lista" id="predicciones-lista">
+                        <!-- Las 3 barras se generan dinámicamente desde JS -->
+                        <div class="prediccion-item" data-rank="1">
+                            <div class="prediccion-header">
+                                <span class="rank rank-1">#1</span>
+                                <span class="prediccion-nombre" id="pred-1-nombre">—</span>
+                                <span class="prediccion-porcentaje" id="pred-1-porcentaje">0%</span>
+                            </div>
+                            <div class="barra-contenedor">
+                                <div class="barra-progreso" id="barra-1" style="width: 0%"></div>
+                                <div class="barra-brillo" id="brillo-1"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="prediccion-item" data-rank="2">
+                            <div class="prediccion-header">
+                                <span class="rank rank-2">#2</span>
+                                <span class="prediccion-nombre" id="pred-2-nombre">—</span>
+                                <span class="prediccion-porcentaje" id="pred-2-porcentaje">0%</span>
+                            </div>
+                            <div class="barra-contenedor">
+                                <div class="barra-progreso" id="barra-2" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="prediccion-item" data-rank="3">
+                            <div class="prediccion-header">
+                                <span class="rank rank-3">#3</span>
+                                <span class="prediccion-nombre" id="pred-3-nombre">—</span>
+                                <span class="prediccion-porcentaje" id="pred-3-porcentaje">0%</span>
+                            </div>
+                            <div class="barra-contenedor">
+                                <div class="barra-progreso" id="barra-3" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info técnica -->
+                <div class="seccion-tecnica">
+                    <h3>Especificaciones Técnicas</h3>
+                    <div class="tech-grid">
+                        <div class="tech-item">
+                            <span class="tech-label">Modelo:</span>
+                            <span class="tech-valor" id="tech-modelo">CNN Keras/TF.js</span>
+                        </div>
+                        <div class="tech-item">
+                            <span class="tech-label">Entrada:</span>
+                            <span class="tech-valor">28×28×1 (784)</span>
+                        </div>
+                        <div class="tech-item">
+                            <span class="tech-label">Clases:</span>
+                            <span class="tech-valor" id="tech-clases">3 categorías</span>
+                        </div>
+                        <div class="tech-item">
+                            <span class="tech-label">Framework:</span>
+                            <span class="tech-valor">TensorFlow.js</span>
+                        </div>
+                        <div class="tech-item">
+                            <span class="tech-label">Latencia:</span>
+                            <span class="tech-valor" id="tech-latencia">— ms</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer-blueprint">
+            <div class="footer-content">
+                <div class="footer-item">
+                    <span class="footer-label">FERIA DE CIENCIAS 2026</span>
+                </div>
+                <div class="footer-item">
+                    <span class="footer-label">Desarrollado con Vanilla JS + TensorFlow.js</span>
+                </div>
+                <div class="footer-item">
+                    <span class="footer-label">100% OFFLINE</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Avisos flotantes (ej. "IA Lista para jugar") -->
+    <div class="toast-contenedor" id="toast-contenedor" aria-live="polite"></div>
+
+    <!-- Carga de TensorFlow.js LOCAL (tf.min.js en la misma carpeta) -->
+    <script src="tf.min.js"></script>
+    <!-- Lógica de la aplicación -->
+    <script src="app.js"></script>
+</body>
+</html>
