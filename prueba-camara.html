@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AdivinIA · Prueba de cámara</title>
+<style>
+    :root {
+        --fondo: #061229;
+        --panel: #0a1e42;
+        --cian: #4dd8ff;
+        --borde: rgba(120, 180, 255, 0.45);
+        --texto: #dcecff;
+        --tenue: rgba(200, 225, 255, 0.62);
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        padding: 24px;
+        background: var(--fondo);
+        color: var(--texto);
+        font-family: ui-monospace, "Cascadia Mono", "Roboto Mono", monospace;
+    }
+    h1 {
+        margin: 0 0 6px;
+        font-size: 18px;
+        letter-spacing: 2px;
+        color: var(--cian);
+    }
+    .sub { margin: 0 0 20px; font-size: 12px; color: var(--tenue); }
+    .fila {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 18px;
+        align-items: flex-start;
+    }
+    .caja {
+        flex: 1 1 340px;
+        background: var(--panel);
+        border: 1px solid var(--borde);
+        border-radius: 4px;
+        padding: 14px;
+    }
+    .caja h2 {
+        margin: 0 0 10px;
+        font-size: 11px;
+        letter-spacing: 2px;
+        color: var(--cian);
+        text-transform: uppercase;
+    }
+    canvas { width: 100%; height: auto; display: block; background: #000; border-radius: 2px; }
+    #video { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .controles { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+    label { display: block; margin-bottom: 4px; font-size: 11.5px; color: var(--tenue); }
+    .valor { color: var(--cian); font-weight: 700; }
+    input[type=range] { width: 100%; accent-color: var(--cian); }
+    button {
+        padding: 10px 14px;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: #061229;
+        background: var(--cian);
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+    }
+    button.sec { color: var(--cian); background: transparent; border: 1px solid var(--borde); }
+    button:hover { filter: brightness(1.12); }
+    #estado { margin-top: 18px; font-size: 12.5px; min-height: 18px; color: var(--tenue); }
+    #estado.ok { color: #38e8b0; }
+    #estado.mal { color: #ff6b6b; }
+</style>
+</head>
+<body>
+    <h1>AdivinIA · Prueba de cámara</h1>
+    <p class="sub">
+        Página de afinado: sirve para ajustar la luz, marcar la zona de la pizarra
+        y encontrar el umbral de tinta antes de usar el modo pizarrón en la app.
+    </p>
+
+    <div class="fila">
+        <div class="caja" style="flex: 1 1 440px;">
+            <h2>1 · Cámara (en vivo)</h2>
+            <video id="video" playsinline muted autoplay></video>
+            <canvas id="cam" width="640" height="480"></canvas>
+            <div class="controles">
+                <button id="btn-start">ENCENDER CÁMARA</button>
+                <button id="btn-zona" class="sec">MARCAR ZONA (arrastra en la cámara)</button>
+            </div>
+        </div>
+
+        <div class="caja" style="flex: 1 1 320px;">
+            <h2>2 · Máscara (lo que vería la IA)</h2>
+            <canvas id="mask" width="320" height="240"></canvas>
+            <div class="controles">
+                <button id="btn-fondo" class="sec">CAPTURAR PIZARRA VACÍA</button>
+            </div>
+        </div>
+
+        <div class="caja" style="flex: 1 1 240px;">
+            <h2>3 · Ajustes</h2>
+            <div class="controles">
+                <div>
+                    <label>Umbral de tinta: <span class="valor" id="v-umbral">45</span></label>
+                    <input type="range" id="umbral" min="5" max="140" value="45">
+                </div>
+                <div>
+                    <label>Vecinos mínimos: <span class="valor" id="v-vecinos">2</span></label>
+                    <input type="range" id="vecinos" min="0" max="8" value="2">
+                </div>
+                <div>
+                    <label>Lado de muestreo: <span class="valor" id="v-lado">160</span></label>
+                    <input type="range" id="lado" min="80" max="320" step="20" value="160">
+                </div>
+                <div>
+                    <label>Fracción de tinta: <span class="valor" id="v-frac">0.00%</span></label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="estado">Enciende la cámara para empezar.</div>
+
+<script>
+(function () {
+    "use strict";
+
+    const elVideo = document.getElementById("video");
+    const elCam = document.getElementById("cam");
+    const ctxCam = elCam.getContext("2d", { willReadFrequently: true });
+    const elMask = document.getElementById("mask");
+
+    const cfg = { umbral: 45, vecinos: 2, lado: 160 };
+    let referencia = null;        // Uint8ClampedArray gris
+    let roi = null;               // zona guardada { x, y, w, h }
+    let zonaTemporal = null;      // rectángulo mientras se arrastra
+    let origen = null;            // punto inicial del arrastre
+    let marcando = false;
+
+    // Canvas de muestreo reutilizable (tamaño cambiante)
+    const elMuestra = document.createElement("canvas");
+
+    function zona() {
+        return roi || { x: 40, y: 40, w: elCam.width - 80, h: elCam.height - 60 };
+    }
+
+    function dimsMuestreo() {
+        const r = zona();
+        const k = cfg.lado / Math.max(r.w, r.h);
+        return {
+            W: Math.max(1, Math.round(r.w * k)),
+            H: Math.max(1, Math.round(r.h * k))
+        };
+    }
+
+    function setEstado(msg, clase) {
+        document.getElementById("estado").textContent = msg;
+        document.getElementById("estado").className = clase || "";
+    }
+
+    function aGris(datos) {
+        const n = datos.length / 4;
+        const g = new Uint8ClampedArray(n);
+        for (let i = 0, j = 0; i < datos.length; i += 4, j++) {
+            g[j] = (datos[i] * 0.299 + datos[i + 1] * 0.587 + datos[i + 2] * 0.114) | 0;
+        }
+        return g;
+    }
+
+    function muestrear() {
+        const r = zona();
+        const { W, H } = dimsMuestreo();
+        elMuestra.width = W;
+        elMuestra.height = H;
+        const g = elMuestra.getContext("2d", { willReadFrequently: true });
+        g.imageSmoothingEnabled = true;
+        g.imageSmoothingQuality = "high";
+        g.drawImage(elCam, r.x, r.y, r.w, r.h, 0, 0, W, H);
+        return { gris: aGris(g.getImageData(0, 0, W, H).data), W, H };
+    }
+
+    function construir(gris, ref, W, H) {
+        const n = W * H;
+        const t = new Uint8Array(n);
+        for (let i = 0; i < n; i++) t[i] = (ref[i] - gris[i]) > cfg.umbral ? 1 : 0;
+
+        if (cfg.vecinos > 0) {
+            const copia = t.slice();
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const idx = y * W + x;
+                    if (!copia[idx]) continue;
+                    let v = 0;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            const nx = x + dx, ny = y + dy;
+                            if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+                            if (copia[ny * W + nx]) v++;
+                        }
+                    }
+                    if (v < cfg.vecinos) t[idx] = 0;
+                }
+            }
+        }
+        return t;
+    }
+
+    function pintarMascara(t, W, H) {
+        elMask.width = W;
+        elMask.height = H;
+        const c = elMask.getContext("2d");
+        const img = c.createImageData(W, H);
+        let tinta = 0;
+        for (let i = 0; i < W * H; i++) {
+            const v = t[i] ? 0 : 255;
+            if (t[i]) tinta++;
+            const p = i * 4;
+            img.data[p] = v;
+            img.data[p + 1] = v;
+            img.data[p + 2] = v;
+            img.data[p + 3] = 255;
+        }
+        c.putImageData(img, 0, 0);
+        return tinta / (W * H);
+    }
+
+    function bucle() {
+        requestAnimationFrame(bucle);
+        if (!elVideo.videoWidth) return;
+        ctxCam.drawImage(elVideo, 0, 0, elCam.width, elCam.height);
+        if (!referencia) return;
+
+        const { gris, W, H } = muestrear();
+        if (referencia.length !== W * H) {
+            setEstado("La zona cambió de tamaño: vuelve a capturar la pizarra vacía.", "mal");
+            return;
+        }
+        const t = construir(gris, referencia, W, H);
+        const frac = pintarMascara(t, W, H);
+        document.getElementById("v-frac").textContent = (frac * 100).toFixed(2) + "%";
+        setEstado(
+            frac < 0.004
+                ? "Pizarra vacía (sin tinta significativa)."
+                : "Dibujo detectado: " + (frac * 100).toFixed(2) + "% de la zona.",
+            frac < 0.004 ? "" : "ok"
+        );
+    }
+
+    document.getElementById("btn-start").addEventListener("click", async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: { width: { ideal: 640 }, height: { ideal: 480 } }
+            });
+            elVideo.srcObject = stream;
+            window.__stream = stream;
+            await elVideo.play();
+            setEstado("Cámara encendida. Deja la pizarra vacía y pulsa CAPTURAR PIZARRA VACÍA.", "ok");
+        } catch (e) {
+            setEstado("No se pudo encender la cámara: " + e.message, "mal");
+        }
+    });
+
+    document.getElementById("btn-fondo").addEventListener("click", async () => {
+        if (!elVideo.videoWidth) { setEstado("Enciende la cámara primero.", "mal"); return; }
+        const r = zona();
+        const { W, H } = dimsMuestreo();
+        const c = document.createElement("canvas");
+        c.width = W;
+        c.height = H;
+        const g = c.getContext("2d", { willReadFrequently: true });
+        const suma = new Float64Array(W * H);
+        const n = 10;
+        for (let i = 0; i < n; i++) {
+            g.drawImage(elCam, r.x, r.y, r.w, r.h, 0, 0, W, H);
+            const gr = aGris(g.getImageData(0, 0, W, H).data);
+            for (let j = 0; j < suma.length; j++) suma[j] += gr[j];
+            await new Promise((res) => setTimeout(res, 70));
+        }
+        referencia = new Uint8ClampedArray(W * H);
+        for (let j = 0; j < referencia.length; j++) {
+            referencia[j] = Math.round(suma[j] / n);
+        }
+        setEstado("Referencia capturada (" + W + "×" + H + "). Dibuja y ajusta el umbral.", "ok");
+    });
+
+    document.getElementById("umbral").addEventListener("input", (e) => {
+        cfg.umbral = Number(e.target.value);
+        document.getElementById("v-umbral").textContent = cfg.umbral;
+    });
+    document.getElementById("vecinos").addEventListener("input", (e) => {
+        cfg.vecinos = Number(e.target.value);
+        document.getElementById("v-vecinos").textContent = cfg.vecinos;
+    });
+    document.getElementById("lado").addEventListener("input", (e) => {
+        cfg.lado = Number(e.target.value);
+        document.getElementById("v-lado").textContent = cfg.lado;
+    });
+
+    elCam.addEventListener("pointerdown", (e) => {
+        if (!marcando) return;
+        const rect = elCam.getBoundingClientRect();
+        origen = {
+            x: (e.clientX - rect.left) * elCam.width / rect.width,
+            y: (e.clientY - rect.top) * elCam.height / rect.height
+        };
+    });
+    elCam.addEventListener("pointermove", (e) => {
+        if (!marcando || !origen) return;
+        const rect = elCam.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * elCam.width / rect.width;
+        const y = (e.clientY - rect.top) * elCam.height / rect.height;
+        zonaTemporal = {
+            x: Math.round(Math.min(origen.x, x)),
+            y: Math.round(Math.min(origen.y, y)),
+            w: Math.round(Math.abs(origen.x - x)),
+            h: Math.round(Math.abs(origen.y - y))
+        };
+        ctxCam.strokeStyle = "#4dd8ff";
+        ctxCam.lineWidth = 2;
+        ctxCam.strokeRect(zonaTemporal.x, zonaTemporal.y, zonaTemporal.w, zonaTemporal.h);
+    });
+    elCam.addEventListener("pointerup", () => {
+        if (!marcando || !zonaTemporal) {
+            marcando = false;
+            origen = null;
+            return;
+        }
+        marcando = false;
+        origen = null;
+        if (zonaTemporal.w >= 20 && zonaTemporal.h >= 20) {
+            roi = zonaTemporal;
+            referencia = null;
+            setEstado("Zona marcada: " + roi.w + "×" + roi.h + ". Captura la pizarra vacía.", "ok");
+        }
+        zonaTemporal = null;
+    });
+
+    document.getElementById("btn-zona").addEventListener("click", () => {
+        marcando = true;
+        setEstado("Arrastra sobre la imagen de la cámara para marcar la zona a vigilar.");
+    });
+
+    bucle();
+})();
+</script>
+</body>
+</html>

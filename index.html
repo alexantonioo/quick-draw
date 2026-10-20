@@ -27,8 +27,42 @@
                     <span class="panel-titulo">ZONA DE DIBUJO</span>
                     <span class="panel-codigo">[INPUT_LAYER]</span>
                 </div>
-                
-                <div class="canvas-contenedor">
+
+                <!-- Selector de modo de entrada: pizarrón (cámara) o ratón (emergencia) -->
+                <div class="selector-modo" role="group" aria-label="Modo de entrada">
+                    <button id="btn-modo-pizarron" class="btn-modo" type="button" aria-pressed="false">
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/>
+                        </svg>
+                        <span>PIZARRÓN</span>
+                    </button>
+                    <button id="btn-modo-raton" class="btn-modo" type="button" aria-pressed="true">
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/>
+                        </svg>
+                        <span>RATÓN</span>
+                    </button>
+                </div>
+
+                <!-- VISTA DE CÁMARA (modo pizarrón): lo que ve la webcam sobre la pizarra -->
+                <div class="camara-contenedor" id="camara-contenedor" hidden>
+                    <canvas id="canvas-camara" width="640" height="480" class="canvas-camara"></canvas>
+                    <!-- Fuente de frames, nunca visible -->
+                    <video id="video-camara" class="video-oculto" playsinline muted autoplay></video>
+
+                    <div class="camara-aviso" id="camara-aviso" hidden>
+                        <span id="camara-aviso-texto"></span>
+                    </div>
+
+                    <!-- Minicuadro: lo que de verdad entra al modelo (máscara blanco/negro) -->
+                    <div class="dibujo-procesado" id="dibujo-procesado">
+                        <span class="dibujo-procesado-titulo">DIBUJO PROCESADO → IA</span>
+                        <canvas id="canvas-procesado" width="140" height="140"></canvas>
+                    </div>
+                </div>
+
+                <!-- LIENZO DE DIBUJO (modo ratón) -->
+                <div class="canvas-contenedor" id="lienzo-contenedor">
                     <canvas id="canvas-dibujo" width="500" height="500" class="canvas-dibujo"></canvas>
                     <div class="canvas-overlay" id="canvas-overlay">
                         <svg class="grid-svg" viewBox="0 0 500 500">
@@ -50,11 +84,31 @@
                         <span>LIMPIAR LIENZO</span>
                         <span class="btn-atajo">[ESPACIO]</span>
                     </button>
-                    <button id="btn-voz" class="btn-blueprint btn-secundario" type="button" title="Activar o desactivar lectura de voz">
+                    <button id="btn-voz" class="btn-blueprint btn-secundario" type="button" aria-pressed="true" title="Silenciar la lectura de voz (por defecto ya habla)">
                         <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
                         </svg>
                         <span>VOZ</span>
+                    </button>
+
+                    <!-- Controles exclusivos del modo pizarrón -->
+                    <button id="btn-calibrar-zona" class="btn-blueprint btn-secundario btn-camara" type="button" title="Dibuja un recuadro sobre la pizarra que la cámara debe vigilar" hidden>
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 3h7M3 3v7M21 3h-7M21 3v7M3 21h7M3 21v-7M21 21h-7M21 21v-7"/>
+                        </svg>
+                        <span>MARCAR ZONA</span>
+                    </button>
+                    <button id="btn-calibrar-fondo" class="btn-blueprint btn-secundario btn-camara" type="button" title="Captura la pizarra vacía como referencia de fondo" hidden>
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/>
+                        </svg>
+                        <span>PIZARRA VACÍA</span>
+                    </button>
+                    <button id="btn-cambiar-camara" class="btn-blueprint btn-secundario btn-camara" type="button" title="Cambiar entre las cámaras disponibles" hidden>
+                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>
+                        </svg>
+                        <span>CAMBIAR CÁMARA</span>
                     </button>
                 </div>
                 

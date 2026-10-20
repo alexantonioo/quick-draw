@@ -170,7 +170,57 @@
 
     /* Lectura en voz alta del Top 1 (ideal para niños y personas con
        discapacidad visual). Se puede activar/desactivar con el botón VOZ. */
-    const VOZ_POR_DEFECTO = false;
+    const VOZ_POR_DEFECTO = true;
+
+    /* ------------------------------------------------------------------
+       MODO DE ENTRADA
+       ------------------------------------------------------------------
+       "pizarron" -> la webcam mira una pizarra física y la app lee el dibujo.
+       "raton"    -> se dibuja sobre la pantalla (modo de emergencia).
+
+       Arranca en "pizarron" y, si la cámara falla, cae solo a "raton" con un
+       aviso: nunca dejes la feria con la pantalla en negro. */
+    const MODO_ENTRADA_POR_DEFECTO = "pizarron";
+
+    /* ------------------------------------------------------------------
+       CÁMARA / VISIÓN  ★★★ AQUÍ SE AFINA EL MONTAJE ★★★
+       ------------------------------------------------------------------
+       Estos valores son los que probablemente tengas que retocar con tu
+       pizarra y tu luz reales. La página prueba-camara.html sirve justo para
+       encontrar los buenos sin tocar la app principal.
+
+       - resolucion    : resolución de captura de la webcam.
+       - fpsAnalisis   : predicciones por segundo. NO lo pongas a 30: el
+                         resultado parpadearía y la voz no pararía de hablar.
+       - ladoAnalisis  : el recuadro de la pizarra se reduce a esto (píxeles)
+                         antes de analizarlo. Más = más fino pero más lento.
+       - umbralTinta   : cuánto más oscuro que la pizarra vacía tiene que ser
+                         un píxel para contar como rotulador. Súbelo si se
+                         cuela ruido; bájalo si no detecta trazos flojos.
+       - umbralMinTinta: fracción mínima del recuadro con tinta para considerar
+                         que HAY dibujo (evita disparar con una mota).
+       - vecinosMinimos: limpieza de ruido; un píxel de tinta necesita al menos
+                         estos vecinos de tinta para sobrevivir.
+       - framesEstables : cuántos análisis seguidos debe ganar la misma clase
+                         antes de darla por buena (estabilidad).
+       - framesReferencia: frames que se promedian al capturar la pizarra vacía. */
+    const CAMARA = {
+        resolucion:       { width: 640, height: 480 },
+        fpsAnalisis:      5,
+        ladoAnalisis:     160,
+        umbralTinta:      45,
+        umbralMinTinta:   0.004,
+        vecinosMinimos:   2,
+        dilatacion:       1,     // engorda el trazo para acercarlo a Quick, Draw!
+        framesEstables:   3,
+        framesReferencia: 12
+    };
+
+    /* Claves de localStorage: la calibración y el modo sobreviven a un F5.
+       En una feria, perder la calibración por recargar la página sería un drama. */
+    const CLAVE_LS_CALIBRACION = "adivinIA.calibracion.v1";
+    const CLAVE_LS_MODO = "adivinIA.modoEntrada.v1";
+    const CLAVE_LS_CAMARA = "adivinIA.camaraId.v1";
 
     /* ======================================================================
        2. REFERENCIAS AL DOM
@@ -181,6 +231,20 @@
     const elVisualizador = $("canvas-visualizador"); // Mini lienzo 28x28
     const elBtnLimpiar = $("btn-limpiar");
     const elBtnVoz = $("btn-voz");
+
+    /* Modo de entrada (ratón / pizarrón) y cámara */
+    const elBtnModoPizarron = $("btn-modo-pizarron");
+    const elBtnModoRaton = $("btn-modo-raton");
+    const elBtnCalibrarZona = $("btn-calibrar-zona");
+    const elBtnCalibrarFondo = $("btn-calibrar-fondo");
+    const elBtnCambiarCamara = $("btn-cambiar-camara");
+    const elContenedorCamara = $("camara-contenedor");
+    const elContenedorLienzo = $("lienzo-contenedor");
+    const elVideoCamara = $("video-camara");
+    const elCanvasCamara = $("canvas-camara");
+    const elCamaraAviso = $("camara-aviso");
+    const elCamaraAvisoTexto = $("camara-aviso-texto");
+    const elCanvasProcesado = $("canvas-procesado");
     const elEstado = $("estado-dibujo");
     const elBadge = $("badge-estado");
     const elToastContenedor = $("toast-contenedor");
@@ -211,14 +275,34 @@
         ultimoY: 0,
         puntoActual: null,     // {x, y} del último punto sin procesar
         trazoEnCurso: false,   // hubo trazo desde el último mouseup
-        voz: VOZ_POR_DEFECTO,
-ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
-        temporizadorVoz: null
+voz: VOZ_POR_DEFECTO,
+        ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
+        temporizadorVoz: null,
+        calculando: false,       // ¿hay una predicción en marcha?
+        rehacer: false,          // ¿llegó otro dibujo mientras se predecía?
+        vozUltimaFrase: null,    // frase dicha hace nada (antirrebote)
+        vozUltimoMomento: 0,
+        modoEntrada: MODO_ENTRADA_POR_DEFECTO,
+        stream: null,
+        camaras: [],
+        indiceCamara: 0,
+        camaraLista: false,
+        calibracion: null,
+        referencia: null,
+        marcandoZona: false,
+        rectTemporal: null,
+        capturandoReferencia: false,
+        valoresPendientes: undefined,
+        firmaMascara: null,
+        firmaEstable: 0,
+        firmaPredicha: null
     };
 
     /* Contextos 2D */
     const ctx = elLienzo.getContext("2d", { willReadFrequently: true });
     const ctxVisualizador = elVisualizador.getContext("2d");
+    const ctxCamara = elCanvasCamara.getContext("2d");
+    const ctxProcesado = elCanvasProcesado.getContext("2d");
 
     /* Lienzos auxiliares fuera de pantalla (no se ven en pantalla) */
     const aux28 = document.createElement("canvas");
@@ -246,12 +330,32 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
            de la carga no pisen este texto inicial. */
         limpiarLienzo();
         registrarEventosLienzo();
+        registrarEventosCamara();
         registrarEventosUI();
+
+        // Recupera zona vigilada y pizarra de referencia de sesiones anteriores
+        cargarCalibracion();
+
+        /* La voz arranca encendida, así que el botón debe verse ya marcado como
+           activo; si no, el rótulo miente. */
+        elBtnVoz.classList.toggle("activo", ESTADO.voz);
+        elBtnVoz.setAttribute("aria-pressed", String(ESTADO.voz));
 
         /* Las clases y el modelo se cargan en paralelo: son independientes y
            así el usuario no espera dos veces. */
         cargarClases();
         cargarModelo();
+
+        /* Arranca en el modo guardado: pizarrón con fallback. */
+        try {
+            const modo = leerModoGuardado();
+            cambiarModoEntrada(modo).catch((err) => {
+                console.warn("[AdivinIA] No se pudo arrancar en modo pizarrón; paso a ratón:", err.message);
+                cambiarModoEntrada("raton").catch(() => {});
+            });
+        } catch (err) {
+            console.warn("[AdivinIA] No se pudo leer el modo guardado:", err.message);
+        }
     }
 
     /* ======================================================================
@@ -313,6 +417,7 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
     function registrarEventosLienzo() {
         // Usamos Pointer Events: cubre ratón, lápiz y pantalla táctil.
         elLienzo.addEventListener("pointerdown", (e) => {
+            if (ESTADO.modoEntrada !== "raton") return;
             e.preventDefault();
             elLienzo.setPointerCapture(e.pointerId);
             ESTADO.dibujando = true;
@@ -398,6 +503,12 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
 
         ctxPixeles28.clearRect(0, 0, TAMANO_ENTRADA, TAMANO_ENTRADA);
 
+        // También limpiamos el mini preview procesado
+        if (ctxProcesado) {
+            ctxProcesado.fillStyle = "#ffffff";
+            ctxProcesado.fillRect(0, 0, elCanvasProcesado.width, elCanvasProcesado.height);
+        }
+
         ESTADO.trazoEnCurso = false;
         ESTADO.ultimoGanador = null;
 
@@ -416,11 +527,16 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
 
     /* Devuelve un Float32Array de 784 valores normalizados (0..1) y además
        deja el resultado dibujado en `salida28` para el visualizador.
-       Devuelve null si el lienzo está en blanco. */
-    function preprocesar() {
+       Devuelve null si la imagen está en blanco.
+
+       Antes recibía el lienzo por variable global; ahora acepta CUALQUIER
+       canvas con fondo blanco y trazo negro. Así el mismo preprocesado sirve
+       para el modo ratón (elLienzo) y para el modo pizarrón (la máscara que
+       sale de la cámara), sin duplicar ni una línea. */
+    function normalizarLienzo(origen) {
         const T = TAMANO_ENTRADA;
 
-        /* --- PASO 1: reescalar el lienzo 500x500 -> 28x28 ---
+        /* --- PASO 1: reescalar la imagen de origen -> 28x28 ---
            El lienzo auxiliar mantiene SIEMPRE el fondo blanco y el trazo
            negro (igual que ve el usuario). La inversión de colores se
            aplica al final, en el paso 3, y solo sobre los valores numéricos.
@@ -429,7 +545,7 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
         ctxAux28.fillRect(0, 0, T, T);
         ctxAux28.imageSmoothingEnabled = true;
         ctxAux28.imageSmoothingQuality = "high";
-        ctxAux28.drawImage(elLienzo, 0, 0, elLienzo.width, elLienzo.height, 0, 0, T, T);
+        ctxAux28.drawImage(origen, 0, 0, origen.width, origen.height, 0, 0, T, T);
 
         /* --- PASO 2: recortar al bounding box y escalar el lado mayor a 20 px --- */
         const caja = calcularCajaContenido();
@@ -481,6 +597,11 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
         return valores;
     }
 
+    /* Modo ratón: el origen es el lienzo en el que dibuja el usuario. */
+    function preprocesar() {
+        return normalizarLienzo(elLienzo);
+    }
+
     /* Busca el rectángulo que contiene toda la tinta (bounding box). */
     /* Busca el rectángulo que contiene toda la tinta (bounding box).
        Se trabaja sobre `aux28`, que siempre tiene fondo BLANCO y trazo
@@ -507,23 +628,22 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
     }
 
     /* Convierte el array de 784 valores en el tensor que espera la red. */
-    function crearTensor(valores) {
+    function crearTensor(valores, canales) {
         const T = TAMANO_ENTRADA;
-        // El tensor lleva dimension de batch: [1, 28, 28, canales]
-        const tensor = tf.tensor4d(valores, [1, T, T, 1], "float32");
+        const n = canales || 1;
 
-        // Si el modelo esperaba 3 canales (RGB), replicamos el gris en R, G y B.
-        if (ESTADO.canales === 3) {
+        // El tensor lleva dimension de batch: [1, 28, 28, n]
+        if (n === 3) {
+            // Si el modelo esperaba 3 canales (RGB), replicamos el gris en R, G y B.
             const rgbs = new Float32Array(T * T * 3);
             for (let i = 0; i < valores.length; i++) {
                 rgbs[i * 3] = valores[i];
                 rgbs[i * 3 + 1] = valores[i];
                 rgbs[i * 3 + 2] = valores[i];
             }
-            tensor.dispose();
             return tf.tensor4d(rgbs, [1, T, T, 3], "float32");
         }
-        return tensor;
+        return tf.tensor4d(valores, [1, T, T, 1], "float32");
     }
 
     /* ======================================================================
@@ -593,13 +713,44 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
        8. PREDICCIÓN
        ====================================================================== */
 
-    /* Pipeline completo: preprocesar -> mostrar tensor -> predecir -> barras */
-    async function ejecutarPipeline() {
+    /* Control de concurrencia. Si el usuario levanta el puntero dos veces muy
+       seguidas, se solapan dos predicciones sobre el mismo modelo y los tensores
+       de una se liberan mientras la otra los sigue usando. En vez de solaparlas
+       las encadenamos: si llega otra mientras predicament, se marca una
+       "pasada pendiente" y se vuelve a lanzar al terminar. Así siempre se
+       muestra la predicción del ÚLTIMO dibujo, que es lo que espera el usuario. */
+    async function ejecutarPipeline(valoresEntrada) {
+        /* Guardamos los últimos valores recibidos: si llega uno nuevo mientras
+           se está calculando, el bucle de abajo retoma ESTE, no el viejo. */
+        ESTADO.valoresPendientes = valoresEntrada;
+
+        if (ESTADO.calculando) {
+            ESTADO.rehacer = true;
+            return;
+        }
+
+        ESTADO.calculando = true;
+        try {
+            do {
+                ESTADO.rehacer = false;
+                await ejecutarPipelineUnaVez(ESTADO.valoresPendientes);
+                ESTADO.valoresPendientes = undefined;
+            } while (ESTADO.rehacer);
+        } finally {
+            ESTADO.calculando = false;
+            ESTADO.rehacer = false;
+        }
+    }
+
+    /* Pipeline completo: preprocesar -> mostrar tensor -> predecir -> barras.
+       `valoresEntrada` es opcional: si viene de la cámara ya está calculado;
+       si no, se preprocesa el lienzo de dibujo (modo ratón). */
+    async function ejecutarPipelineUnaVez(valoresEntrada) {
         try {
             actualizarEstado("Preprocesando imagen...", "procesando");
             elContenedorPredicciones.classList.add("calculando");
 
-            const valores = preprocesar();
+            const valores = valoresEntrada || preprocesar();
 
             if (!valores) {
                 // Lienzo en blanco: no hay nada que adivinar.
@@ -617,6 +768,9 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
                 const resultado = await predecirConModelo(valores);
                 probabilidades = resultado.probabilidades;
                 latencia = resultado.latencia;
+                /* Solo se consolida el nº de canales si la predicción
+                   funcionó, para no dejar el estado corrupto. */
+                ESTADO.canales = resultado.canales;
             } else {
                 const resultado = predecirDemo(valores);
                 probabilidades = resultado.probabilidades;
@@ -637,11 +791,21 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
             }
         } catch (error) {
             console.error("[AdivinIA] Error en el pipeline:", error);
-            actualizarEstado("Ocurrió un error al analizar el dibujo.", "error");
-            mostrarToast(`Error: ${error.message}`, "error");
+            /* Antes se mostraba SIEMPRE "Ocurrió un error al analizar el
+               dibujo", que no dice nada: si algo falla, hay que poder ver por
+               qué sin abrir la consola. Recortamos el texto para que quepa en
+               la línea de estado y lo guardamos para el aviso flotante. */
+            const motivo = (error && error.message) ? error.message : String(error);
+            actualizarEstado(`Error al analizar: ${motivo}`, "error");
+            mostrarToast(`Error: ${recortar(motivo, 90)}`, "error");
         } finally {
             elContenedorPredicciones.classList.remove("calculando");
         }
+    }
+
+    /* Recorta un texto para que quepa en un aviso sin partirlo por la mitad */
+    function recortar(texto, max) {
+        return texto.length > max ? texto.slice(0, max - 1).trimEnd() + "…" : texto;
     }
 
     /* Paso de inferencia real con TensorFlow.js.
@@ -649,24 +813,29 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
        cargarModelo): predict() para LayersModel, executeAsync() para GraphModel.
        En ambos casos se ejecuta fuera del hilo principal de forma asíncrona, así
        que el lienzo sigue respondiendo mientras la IA razona. */
-    async function predecirConModelo(valores) {
+    async function predecirConModelo(valores, canales) {
         if (!ESTADO.modelo) {
             throw new Error("El modelo todavía no está cargado.");
         }
 
-        const tensor = crearTensor(valores);
+        /* Los canales se pasan como ARGUMENTO, no se tocan directamente. Antes
+           el reintentoRGB mutaba ESTADO.canales y lo dejaba en 3 para siempre:
+           un solo fallo deja la app estropeada de forma permanente. */
+        const n = canales || ESTADO.canales || 1;
+        const tensor = crearTensor(valores, n);
         let tensorSalida = null;
+        let resultado = null;
 
         try {
             const t0 = performance.now();
 
             /* Cada tipo de modelo se ejecuta de una manera:
-               - LayersModel (tu caso): predict() devuelve un Tensor, o un array
-                 de tensores si el modelo tiene varias salidas.
+               - LayersModel: predict() devuelve un Tensor, o un array de
+                 tensores si el modelo tiene varias salidas.
                - GraphModel: executeAsync() devuelve un objeto con los tensores
-                 indexados por nombre, p. ej. { "StatefulPartitionedCall:0": T }.
+                 indexados por nombre.
                extraerTensorSalida() normaliza ambos casos a un solo tensor. */
-            const resultado = ESTADO.formato === "layers"
+            resultado = ESTADO.formato === "layers"
                 ? await ESTADO.modelo.predict(tensor)
                 : await ESTADO.modelo.executeAsync(tensor);
 
@@ -681,25 +850,51 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
             const probabilidades = tensorSalida.dataSync();
             const latencia = performance.now() - t0;
 
-            return { probabilidades, latencia };
+            return { probabilidades, latencia, canales: n };
         } catch (error) {
-            /* Si el modelo esperaba 3 canales (RGB) y le damos 1 (o al revés),
-               se reintenta una sola vez con la otra configuración. */
-            if (ESTADO.canales === 1) {
-                console.warn("[AdivinIA] Reintentando la predicción con 3 canales (RGB):", error.message);
-                ESTADO.canales = 3;
-                return predecirConModelo(valores);
+            /* Solo tiene sentido reintentar por RGB si el error habla de
+               canales o de formas. Antes se reintentaba con CUALQUIER fallo
+               (una voz sin dispositif, un tensor ya liberado...) y eso solo
+              mogaba más. */
+            const esProblemaDeForma = /channel|canal|shape|rank|depth|dimensi/i
+                .test(error.message || "");
+
+            if (esProblemaDeForma && n === 1) {
+                console.warn("[AdivinIA] El modelo no encaja con 1 canal; se reintenta con 3 (RGB).",
+                            error.message);
+                return predecirConModelo(valores, 3);
             }
             throw error;
         } finally {
-            /* Liberamos la memoria de la GPU SIEMPRE, aunque hayaSaltado una
+            /* Liberamos la memoria de la GPU SIEMPRE, aunque haya saltado una
                excepción. Es lo que evita que la laptop se llene de tensores
                huérfanos a lo largo de una hora de feria.
-               OJO: hay que liberar los TENSORES, no el objeto contenedor:
-               tf.dispose() acepta un tensor o un array de tensores. */
-            tensor.dispose();
-            if (tensorSalida) tensorSalida.dispose();
+
+               OJO: hay que liberar TODOS los tensores de salida, no solo el
+               elegido. Un GraphModel puede devolver varias salidas y dejar las
+               demás sin liberar hace que la memoria crezca predicción a
+               predicción, hasta que el navegador empieza a fallar sin motivo
+               aparente. */
+            if (resultado) {
+                listarTensors(resultado).forEach((t) => {
+                    if (!t.isDisposed) t.dispose();
+                });
+            } else if (tensorSalida && !tensorSalida.isDisposed) {
+                tensorSalida.dispose();
+            }
+            if (!tensor.isDisposed) tensor.dispose();
         }
+    }
+
+    /* Normaliza lo que devuelven predict()/executeAsync() a una lista de tensores:
+       un tensor suelto, un array, o un objeto con los nombres de salida. */
+    function listarTensors(resultado) {
+        if (!resultado) return [];
+        if (resultado instanceof tf.Tensor) return [resultado];
+        if (Array.isArray(resultado)) {
+            return resultado.filter((t) => t instanceof tf.Tensor);
+        }
+        return Object.values(resultado).filter((t) => t instanceof tf.Tensor);
     }
 
     /* Saca el tensor de probabilidades de lo que devuelve predict() o
@@ -710,23 +905,21 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
        ejemplo, si la firma incluye métricas), así que no nos quedamos a ciegas
        con la primera: buscamos la que tenga exactamente un valor por clase. */
     function extraerTensorSalida(resultado) {
-        let tensores;
-        if (resultado instanceof tf.Tensor) {
-            tensores = [resultado];
-        } else if (Array.isArray(resultado)) {
-            tensores = resultado.filter((t) => t instanceof tf.Tensor);
-        } else if (resultado && typeof resultado === "object") {
-            tensores = Object.values(resultado).filter((t) => t instanceof tf.Tensor);
-        } else {
-            return null;
-        }
-
+        const tensores = listarTensors(resultado);
         if (tensores.length === 0) return null;
 
-        // Preferimos la salida con una probabilidad por clase
-        const buena = tensores.find(
-            (t) => t.size === CLASES.length || t.dataSync().length === CLASES.length
-        );
+        /* Preferimos la salida con una probabilidad por clase. Solo usamos
+           dataSync() si el .size no basta, porque dataSync() es una lectura
+           bloqueante y no queremos Repeatedla 20 veces por predicción. */
+        const buena = tensores.find((t) => t.size === CLASES.length)
+            || tensores.find((t) => {
+                try {
+                    return t.dataSync().length === CLASES.length;
+                } catch (e) {
+                    return false;
+                }
+            });
+
         return buena || tensores[0];
     }
 
@@ -1018,14 +1211,60 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
     function registrarEventosUI() {
         elBtnLimpiar.addEventListener("click", limpiarLienzo);
 
+        elBtnLimpiar.addEventListener("click", limpiarLienzo);
+
+        /* Botones de modo de entrada: ratón / pizarrón */
+        elBtnModoRaton.addEventListener("click", () => {
+            cambiarModoEntrada("raton");
+        });
+        elBtnModoPizarron.addEventListener("click", () => {
+            cambiarModoEntrada("pizarron");
+        });
+
+        /* Controles de calibración (modo pizarrón) */
+        if (elBtnCalibrarZona) {
+            elBtnCalibrarZona.addEventListener("click", marcarZona);
+        }
+        if (elBtnCalibrarFondo) {
+            elBtnCalibrarFondo.addEventListener("click", () => {
+                capturarReferencia().catch((err) => {
+                    console.error("[AdivinIA] Error capturando referencia:", err);
+                    mostrarToast("No se pudo capturar la referencia", "error");
+                });
+            });
+        }
+        if (elBtnCambiarCamara) {
+            elBtnCambiarCamara.addEventListener("click", () => {
+                cambiarCamaraDisponible().catch((err) => {
+                    mostrarToast("No se pudo cambiar de cámara", "error");
+                    console.warn("[AdivinIA] cambiarCamaraDisponible:", err.message);
+                });
+            });
+        }
+
+        /* La voz ahora viene ACTIVADA por defecto: el botón ya no enciende nada,
+           solo silencia. Antes había que pulsarlo para que hablara. */
         elBtnVoz.addEventListener("click", () => {
             ESTADO.voz = !ESTADO.voz;
             elBtnVoz.classList.toggle("activo", ESTADO.voz);
-            mostrarToast(ESTADO.voz ? "Voz activada" : "Voz desactivada", "info");
-            if (ESTADO.voz && "speechSynthesis" in window) {
-                falar("Voz activada");
+            elBtnVoz.setAttribute("aria-pressed", String(ESTADO.voz));
+            if (!ESTADO.voz && "speechSynthesis" in window) {
+                window.speechSynthesis.cancel();
+                mostrarToast("Voz silenciada", "info");
+            } else {
+                mostrarToast("Voz activada", "info");
+                // Voz de prueba para confirmar que suena sin tener que dibujar
+                hablar({ nombre: ESTADO.ultimoGanador || "avion" });
             }
         });
+
+        /* Las voces del sistema llegan de forma asíncrona en algunos
+           navegadores. Nos suscribimos para usar una voz española de verdad en
+           cuanto estén disponibles. */
+        if ("speechSynthesis" in window) {
+            window.speechSynthesis.addEventListener("voiceschanged", cargarVozEspanol);
+            cargarVozEspanol();
+        }
 
         // Atajos: ESPACIO o la tecla C borran el lienzo
         document.addEventListener("keydown", (e) => {
@@ -1062,14 +1301,52 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
         }, 3200);
     }
 
-    /* Lee en voz alta la predicción ganadora */
-    function falar(texto) {
-        if (!ESTADO.voz || !texto || !("speechSynthesis" in window)) return;
+    /* Lee en voz alta la predicción ganadora.
+       Recibe el objeto del Top 1 ({ nombre, probabilidad }) y usa el nombre
+       BONITO de NOMBRES_PANTALLA, que ya lleva tildes: leer "avion" en voz alta
+       suena fatal, "Avión" se entiende perfectly. */
+    let vozEspanol = null;
+
+    /* Las voces del sistema NO están disponibles en el primer momento: hay que
+       esperar al evento "voiceschanged". Si no, el navegador usa la voz por
+       defecto del sistema, que puede ser inglesa. */
+    function cargarVozEspanol() {
+        if (!("speechSynthesis" in window)) return null;
+        const voces = window.speechSynthesis.getVoices();
+        if (!voces.length) return null;
+        vozEspanol = voces.find((v) => /^es[-_]ES/i.test(v.lang))
+            || voces.find((v) => /^es/i.test(v.lang))
+            || voces[0];
+        return vozEspanol;
+    }
+
+    function hablar(top) {
+        if (!ESTADO.voz || !top || !("speechSynthesis" in window)) return;
+
+        const texto = NOMBRES_PANTALLA[top.nombre] || capitalizar(top.nombre);
+        if (!texto) return;
+
+        /* Antirrebote: si se dice exactamente lo mismo en menos de 1,2 s es que
+           el usuario sigue rayando encima. Hablar ahí produce un tartamudeo
+           que no aporta nada. */
+        const ahora = Date.now();
+        if (ESTADO.vozUltimaFrase === texto && (ahora - ESTADO.vozUltimoMomento) < 1200) {
+            return;
+        }
+        ESTADO.vozUltimaFrase = texto;
+        ESTADO.vozUltimoMomento = ahora;
+
         try {
-            window.speechSynthesis.cancel(); // cancela la frase anterior
+            // cancel() corta la frase anterior: si no, las predicciones se
+            // apilan y oyes un collage de frases desfasadas.
+            window.speechSynthesis.cancel();
+            if (!vozEspanol) cargarVozEspanol();
+
             const frase = new SpeechSynthesisUtterance("Creo que es: " + texto);
             frase.lang = "es-ES";
+            if (vozEspanol) frase.voice = vozEspanol;
             frase.rate = 0.95;
+            frase.pitch = 1.05;
             window.speechSynthesis.speak(frase);
         } catch (e) {
             console.warn("[AdivinIA] Voz no disponible:", e);
@@ -1080,6 +1357,740 @@ ultimoGanador: null,     // nombre del Top 1 anterior (para el destello)
     function actualizarContadorClases() {
         const el = document.getElementById("tech-clases");
         if (el) el.textContent = `${CLASES.length} categorías`;
+    }
+
+    /* ======================================================================
+       11. CÁMARA / PIZARRÓN
+       ====================================================================== */
+
+    function contextoEsSeguro() {
+        return !!window.isSecureContext;
+    }
+
+    function mostrarAvisoCamara(texto, esError) {
+        if (!elCamaraAviso) return;
+        if (texto) {
+            elCamaraAviso.hidden = false;
+            if (elCamaraAvisoTexto) {
+                elCamaraAvisoTexto.textContent = texto;
+            }
+            elCamaraAviso.classList.toggle("error", !!esError);
+        } else {
+            elCamaraAviso.hidden = true;
+        }
+    }
+
+    function ocultarAvisoCamara() {
+        mostrarAvisoCamara(null, false);
+    }
+
+    async function enumerarCamaras() {
+        try {
+            const dispositivos = await navigator.mediaDevices.enumerateDevices();
+            ESTADO.camaras = dispositivos.filter((d) => d.kind === "videoinput");
+        } catch (e) {
+            console.warn("[AdivinIA] No se pudieron enumerar las cámaras:", e.message);
+            ESTADO.camaras = [];
+        }
+    }
+
+    async function pedirStreamCamara() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error("El navegador no soporta getUserMedia para la cámara.");
+        }
+        if (!contextoEsSeguro()) {
+            throw new Error("Contexto no seguro: abre http://localhost (Live Server) o HTTPS.");
+        }
+
+        const restricciones = {
+            audio: false,
+            video: {
+                width:  { ideal: CAMARA.resolucion.width },
+                height: { ideal: CAMARA.resolucion.height }
+            }
+        };
+
+        const id = ESTADO.camaras[ESTADO.indiceCamara]
+            && ESTADO.camaras[ESTADO.indiceCamara].deviceId;
+        if (id) restricciones.video.deviceId = { exact: id };
+
+        return navigator.mediaDevices.getUserMedia(restricciones);
+    }
+
+    function manejarErrorCamara(err) {
+        let msg = err && err.message ? err.message : String(err);
+        if (/denied|permission|permiso/i.test(msg)) {
+            msg = "Permiso de cámara denegado. Actívalo y recarga.";
+        } else if (/notfound|not found/i.test(msg)) {
+            msg = "No se encontró ninguna cámara.";
+        } else if (/secure|contexto/i.test(msg)) {
+            msg = "La cámara requiere contexto seguro (http://localhost o HTTPS).";
+        }
+        mostrarAvisoCamara(msg, true);
+        return msg;
+    }
+
+    async function iniciarCamara() {
+        mostrarAvisoCamara("Encendiendo cámara…", false);
+
+        // La resolución del canvas sigue a la de captura, para dibujar 1:1
+        elCanvasCamara.width = CAMARA.resolucion.width;
+        elCanvasCamara.height = CAMARA.resolucion.height;
+
+        const stream = await pedirStreamCamara();
+        ESTADO.stream = stream;
+        elVideoCamara.srcObject = stream;
+
+        /* play() arranca la reproducción. No esperamos al evento
+           'loadedmetadata': con el atributo autoplay ese evento ya puede haber
+           saltado antes de escuchar, y "esperar un evento ya pasado" deja la
+           promesa colgada para siempre (era el "Encendiendo cámara…" eterno).
+           En su lugar sondeamos videoWidth, que es lo que de verdad necesitamos. */
+        try {
+            await elVideoCamara.play();
+        } catch (e) {
+            console.warn("[AdivinIA] play() rechazó, seguimos igualmente:", e.message);
+        }
+        await esperarVideoConDatos(elVideoCamara);
+
+        await enumerarCamaras();
+        ESTADO.camaraLista = true;
+        ocultarAvisoCamara();
+        arrancarBucleCamara();
+        arrancarAnalisisCamara();
+    }
+
+    /* Espera (con tope de tiempo) a que el vídeo tenga frames disponibles.
+       Sondear evita la carrera del evento loadedmetadata. */
+    async function esperarVideoConDatos(video, timeoutMs = 3000) {
+        const inicio = Date.now();
+        while (!video.videoWidth && video.readyState < 2) {
+            if (Date.now() - inicio > timeoutMs) break;
+            await esperar(50);
+        }
+    }
+
+    function detenerCamara() {
+        pararBucleCamara();
+        pararAnalisisCamara();
+        if (ESTADO.stream) {
+            ESTADO.stream.getTracks().forEach((t) => t.stop());
+            ESTADO.stream = null;
+        }
+        if (elVideoCamara) elVideoCamara.srcObject = null;
+        ESTADO.camaraLista = false;
+    }
+
+    async function cambiarCamaraDisponible() {
+        await enumerarCamaras();
+        if (ESTADO.camaras.length <= 1) {
+            mostrarToast("Solo hay una cámara disponible", "info");
+            return;
+        }
+        ESTADO.indiceCamara = (ESTADO.indiceCamara + 1) % ESTADO.camaras.length;
+        detenerCamara();
+        await iniciarCamara();
+        mostrarToast("Cámara cambiada", "ok");
+    }
+
+    /* ----- Bucle de dibujo del frame (Fase 2) -----
+       De momento solo pinta la imagen de la cámara en el canvas. En la Fase 4
+       aquí mismo se hará la detección de tinta. Lo dejamos ya asentado en un
+       bucle propio para no rehacerlo después. */
+    let idBucleCamara = null;
+
+    function arrancarBucleCamara() {
+        if (idBucleCamara !== null) return;
+        const paso = () => {
+            idBucleCamara = requestAnimationFrame(paso);
+            dibujarFrameCamara();
+        };
+        paso();
+    }
+
+    function pararBucleCamara() {
+        if (idBucleCamara !== null) {
+            cancelAnimationFrame(idBucleCamara);
+            idBucleCamara = null;
+        }
+    }
+
+    function dibujarFrameCamara() {
+        if (!ESTADO.camaraLista || !elVideoCamara.videoWidth) return;
+        ctxCamara.drawImage(elVideoCamara, 0, 0, elCanvasCamara.width, elCanvasCamara.height);
+        dibujarOverlayCalibracion();
+    }
+
+    /* ----- Calibración: zona vigilada (ROI) y pizarra vacía (referencia) -----
+       Guardamos las coordenadas en el espacio REAL del canvas (640x480), no en
+       píxeles de pantalla, para que sigan valiendo aunque la ventana cambie. */
+
+    function obtenerCoordenadasCamara(evento) {
+        const rect = elCanvasCamara.getBoundingClientRect();
+        const escalaX = elCanvasCamara.width / rect.width;
+        const escalaY = elCanvasCamara.height / rect.height;
+        return {
+            x: (evento.clientX - rect.left) * escalaX,
+            y: (evento.clientY - rect.top) * escalaY
+        };
+    }
+
+    function rectanguloNormalizado(a, b) {
+        return {
+            x: Math.round(Math.min(a.x, b.x)),
+            y: Math.round(Math.min(a.y, b.y)),
+            w: Math.round(Math.abs(a.x - b.x)),
+            h: Math.abs(a.y - b.y) >= 0 ? Math.round(Math.abs(a.y - b.y)) : 0
+        };
+    }
+
+    /* Rectángulo que se analiza: el ROI marcado o, si no hay, todo el frame */
+    function regionDeInteres() {
+        if (ESTADO.calibracion && ESTADO.calibracion.roi) {
+            return ESTADO.calibracion.roi;
+        }
+        return { x: 0, y: 0, w: elCanvasCamara.width, h: elCanvasCamara.height };
+    }
+
+    /* Dibuja la etiqueta de estado y, si se está marcando, el rectángulo */
+    function dibujarOverlayCalibracion() {
+        if (!ESTADO.marcandoZona) {
+            if (ESTADO.referencia) {
+                dibujarEtiquetaCamara("FONDO OK", "#37ff9b");
+            } else {
+                dibujarEtiquetaCamara("SIN FONDO", "#ffb454");
+            }
+        }
+
+        if (!ESTADO.rectTemporal) return;
+
+        // Oscurecemos todo menos la zona marcada, para ver qué se vigilará
+        ctxCamara.save();
+        ctxCamara.fillStyle = "rgba(6, 18, 41, 0.55)";
+        const c = elCanvasCamara;
+        const r = ESTADO.rectTemporal;
+        ctxCamara.fillRect(0, 0, c.width, r.y);
+        ctxCamara.fillRect(0, r.y + r.h, c.width, c.height - (r.y + r.h));
+        ctxCamara.fillRect(0, r.y, r.x, r.h);
+        ctxCamara.fillRect(r.x + r.w, r.y, c.width - (r.x + r.w), r.h);
+
+        ctxCamara.strokeStyle = "#4dd8ff";
+        ctxCamara.lineWidth = 2;
+        ctxCamara.strokeRect(r.x, r.y, r.w, r.h);
+        ctxCamara.restore();
+    }
+
+    function dibujarEtiquetaCamara(texto, color) {
+        ctxCamara.save();
+        ctxCamara.font = "bold 13px monospace";
+        const ancho = ctxCamara.measureText(texto).width + 16;
+        ctxCamara.fillStyle = "rgba(6, 18, 41, 0.82)";
+        ctxCamara.fillRect(8, 8, ancho, 24);
+        ctxCamara.strokeStyle = color;
+        ctxCamara.lineWidth = 1;
+        ctxCamara.strokeRect(8, 8, ancho, 24);
+        ctxCamara.fillStyle = color;
+        ctxCamara.fillText(texto, 16, 25);
+        ctxCamara.restore();
+    }
+
+    function marcarZona() {
+        if (ESTADO.modoEntrada !== "pizarron" || !ESTADO.camaraLista) return;
+        ESTADO.marcandoZona = true;
+        ESTADO.rectTemporal = null;
+        mostrarAvisoCamara("Arrastra sobre la cámara para marcar la zona de la pizarra.", false);
+    }
+
+    function registrarEventosCamara() {
+        // Mientras se marca la zona, el arrastre vive aquí (no en el lienzo de dibujo)
+        elCanvasCamara.addEventListener("pointerdown", (e) => {
+            if (!ESTADO.marcandoZona) return;
+            e.preventDefault();
+            elCanvasCamara.setPointerCapture(e.pointerId);
+            const p = obtenerCoordenadasCamara(e);
+            ESTADO.rectTemporal = { x: p.x, y: p.y, w: 0, h: 0 };
+            ESTADO._origenZona = p;
+        });
+
+        elCanvasCamara.addEventListener("pointermove", (e) => {
+            if (!ESTADO.marcandoZona || !ESTADO.rectTemporal || !ESTADO._origenZona) return;
+            e.preventDefault();
+            ESTADO.rectTemporal = rectEntre(ESTADO._origenZona, obtenerCoordenadasCamara(e));
+        });
+
+        const soltarZona = (e) => {
+            if (!ESTADO.marcandoZona) return;
+            e.preventDefault();
+            ESTADO.marcandoZona = false;
+            const r = ESTADO.rectTemporal;
+            ESTADO._origenZona = null;
+
+            if (!r || r.w < 20 || r.h < 20) {
+                ESTADO.rectTemporal = null;
+                mostrarAvisoCamara("Zona demasiado pequeña. Repite el arrastre.", true);
+                return;
+            }
+
+            ESTADO.calibracion = ESTADO.calibracion || {};
+            ESTADO.calibracion.roi = redondearRectangulo(r);
+            ESTADO.rectTemporal = null;
+            // Cambiar la zona invalida la referencia anterior (era de otra zona)
+            ESTADO.referencia = null;
+            guardarCalibracion();
+            ocultarAvisoCamara();
+            mostrarToast("Zona de pizarra marcada", "ok");
+        };
+        elCanvasCamara.addEventListener("pointerup", soltarZona);
+        elCanvasCamara.addEventListener("pointercancel", soltarZona);
+    }
+
+    /* Dos puntos -> rectángulo {x, y, w, h} */
+    function rectEntre(a, b) {
+        const x = Math.min(a.x, b.x);
+        const y = Math.min(a.y, b.y);
+        return { x, y, w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+    }
+
+    function redondearRectangulo(r) {
+        return {
+            x: Math.round(r.x),
+            y: Math.round(r.y),
+            w: Math.round(r.w),
+            h: Math.round(r.h)
+        };
+    }
+
+    /* La zona por defecto si el usuario aún no ha marcado nada: casi todo el
+       marco, dejando un margen para no comerse los bordes del encuadre. */
+    function zonaPorDefecto() {
+        const margen = 0.08;
+        const w = elCanvasCamara.width;
+        const h = elCanvasCamara.height;
+        return {
+            x: Math.round(w * margen),
+            y: Math.round(h * margen),
+            w: Math.round(w * (1 - 2 * margen)),
+            h: Math.round(h * (1 - 2 * margen))
+        };
+    }
+
+    /* Captura la pizarra vacía como referencia, promediando varios fotogramas
+       para eliminar ruido del sensor. */
+    async function capturarReferencia() {
+        if (ESTADO.modoEntrada !== "pizarron" || !ESTADO.camaraLista) return;
+        if (ESTADO.capturandoReferencia) return;
+
+        ESTADO.capturandoReferencia = true;
+        try {
+            /* CLAVE: usar EXACTAMENTE la misma zona y las mismas dimensiones
+               que usa analizarCamara. Antes se muestreaba a un cuadrado
+               lado×lado, pero el análisis lo hace respetando el aspecto
+               (p. ej. 160x120). Los tamaños no cuadraban y analizarCamara
+               descartaba la referencia en silencio: por eso no reconocía nada. */
+            const roi = (ESTADO.calibracion && ESTADO.calibracion.roi) || zonaPorDefecto();
+            const { W, H } = dimsMuestreo(roi);
+
+            const lienzoTmp = document.createElement("canvas");
+            lienzoTmp.width = W;
+            lienzoTmp.height = H;
+            const ctxTmp = lienzoTmp.getContext("2d", { willReadFrequently: true });
+
+            const suma = new Float64Array(W * H);
+
+            for (let i = 0; i < CAMARA.framesReferencia; i++) {
+                mostrarAvisoCamara(
+                    `Capturando pizarra vacía… deja la pizarra despejada (${i + 1}/${CAMARA.framesReferencia})`,
+                    false
+                );
+                ctxTmp.drawImage(elCanvasCamara, roi.x, roi.y, roi.w, roi.h, 0, 0, W, H);
+                const gris = aEscalaDeGrises(ctxTmp.getImageData(0, 0, W, H).data);
+                for (let j = 0; j < suma.length; j++) suma[j] += gris[j];
+                await esperar(70);
+            }
+
+            const referencia = new Uint8ClampedArray(suma.length);
+            for (let j = 0; j < referencia.length; j++) {
+                referencia[j] = Math.round(suma[j] / CAMARA.framesReferencia);
+            }
+
+            ESTADO.calibracion = ESTADO.calibracion || {};
+            ESTADO.calibracion.roi = roi;
+            ESTADO.calibracion.lado = CAMARA.ladoAnalisis;
+            ESTADO.referencia = referencia;
+            ESTADO.firmaPredicha = null; // la referencia cambió: fuerza redetectar
+            guardarCalibracion();
+            ocultarAvisoCamara();
+            mostrarToast("Pizarra vacía capturada como referencia", "ok");
+        } finally {
+            ESTADO.capturandoReferencia = false;
+        }
+    }
+
+    /* Convierte RGBA a un canal de gris (0-255) */
+    function aEscalaDeGrises(datos) {
+        const n = datos.length / 4;
+        const gris = new Uint8ClampedArray(n);
+        for (let i = 0, j = 0; i < datos.length; i += 4, j++) {
+            gris[j] = (datos[i] * 0.299 + datos[i + 1] * 0.587 + datos[i + 2] * 0.114) | 0;
+        }
+        return gris;
+    }
+
+    function esperar(ms) {
+        return new Promise((res) => setTimeout(res, ms));
+    }
+
+    /* ----- Persistencia de la calibración en localStorage ----- */
+
+    function guardarCalibracion() {
+        try {
+            const referencia = ESTADO.referencia ? bytesABase64(ESTADO.referencia) : null;
+            const datos = {
+                version: 1,
+                roi: ESTADO.calibracion ? ESTADO.calibracion.roi : null,
+                lado: CAMARA.ladoAnalisis,
+                referencia
+            };
+            localStorage.setItem(CLAVE_LS_CALIBRACION, JSON.stringify(datos));
+        } catch (e) {
+            console.warn("[AdivinIA] No se pudo guardar la calibración:", e.message);
+        }
+    }
+
+    function cargarCalibracion() {
+        try {
+            const crudo = localStorage.getItem(CLAVE_LS_CALIBRACION);
+            if (!crudo) return;
+            const datos = JSON.parse(crudo);
+            if (datos && datos.roi) {
+                ESTADO.calibracion = { roi: datos.roi, lado: datos.lado || CAMARA.ladoAnalisis };
+            }
+            if (datos && datos.referencia) {
+                ESTADO.referencia = base64ABytes(datos.referencia);
+            }
+        } catch (e) {
+            console.warn("[AdivinIA] No se pudo leer la calibración guardada:", e.message);
+        }
+    }
+
+    function bytesABase64(bytes) {
+        let binario = "";
+        const trozo = 0x8000; // evita desbordar la pila con arrays grandes
+        for (let i = 0; i < bytes.length; i += trozo) {
+            binario += String.fromCharCode.apply(null, bytes.subarray(i, i + trozo));
+        }
+        return btoa(binario);
+    }
+
+    function base64ABytes(b64) {
+        const binario = atob(b64);
+        const bytes = new Uint8ClampedArray(binario.length);
+        for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+        return bytes;
+    }
+
+    /* ======================================================================
+       12. MÁSCARA DE TINTA (pincel virtual)
+       ======================================================================
+       La cámara no "dibuja": compara cada frame con la pizarra vacía guardada
+       y marca como tinta todo píxel claramente MÁS OSCURO que la referencia.
+       El resultado es una imagen blanco/negro que entra al mismo modelo que
+       usa el modo ratón, a través de normalizarLienzo(). */
+
+    /* Canvas fuera de pantalla donde se muestrea el ROI (a tamaño pequeño) */
+    const canvasMuestra = document.createElement("canvas");
+    const ctxMuestra = canvasMuestra.getContext("2d", { willReadFrequently: true });
+
+    /* Canvas fuera de pantalla con la máscara binaria (blanco / negro) */
+    const canvasMascara = document.createElement("canvas");
+    const ctxMascara = canvasMascara.getContext("2d", { willReadFrequently: true });
+
+    let idAnalisisCamara = null;
+
+    /* Proporción del ROI que se conserva al muestrear: la imagen pequeña
+       mantiene la relación de aspecto para no deformar el dibujo. */
+    function dimsMuestreo(roi) {
+        const lado = CAMARA.ladoAnalisis;
+        const k = lado / Math.max(roi.w, roi.h);
+        return {
+            W: Math.max(1, Math.round(roi.w * k)),
+            H: Math.max(1, Math.round(roi.h * k))
+        };
+    }
+
+    function ajustarCanvas(canvas, w, h) {
+        if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+        }
+    }
+
+    /* Muestrea el ROI como escala de grises a tamaño reducido */
+    function muestrearRoiGris(roi, W, H) {
+        ajustarCanvas(canvasMuestra, W, H);
+        ctxMuestra.imageSmoothingEnabled = true;
+        ctxMuestra.imageSmoothingQuality = "high";
+        ctxMuestra.drawImage(
+            elCanvasCamara,
+            roi.x, roi.y, roi.w, roi.h,
+            0, 0, W, H
+        );
+        const datos = ctxMuestra.getImageData(0, 0, W, H).data;
+        return aEscalaDeGrises(datos);
+    }
+
+    /* Devuelve un Uint8Array (1 = tinta) comparando contra la referencia.
+       Luego erosiona para quitar puntitos sueltos de ruido. */
+    function construirMascara(gris, ref, W, H) {
+        const umbral = CAMARA.umbralTinta;
+        const n = W * H;
+        const esTinta = new Uint8Array(n);
+
+        for (let i = 0; i < n; i++) {
+            // Tinta = claramente más oscuro que la pizarra vacía
+            esTinta[i] = (ref[i] - gris[i]) > umbral ? 1 : 0;
+        }
+
+        const min = CAMARA.vecinosMinimos;
+        if (min > 0) {
+            const copia = esTinta.slice();
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    const idx = y * W + x;
+                    if (!copia[idx]) continue;
+                    let vecinos = 0;
+                    for (let dy = -1; dy <= 1; dy++) {
+                        for (let dx = -1; dx <= 1; dx++) {
+                            if (dx === 0 && dy === 0) continue;
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+                            if (copia[ny * W + nx]) vecinos++;
+                        }
+                    }
+                    if (vecinos < min) esTinta[idx] = 0;
+                }
+            }
+        }
+
+        /* Dilatación: engorda el trazo para acercarlo al grosor de Quick, Draw!
+           Un rotulador fino, reducido a 160 px, queda como una línea de 1-2 px
+           que al bajar a 28 px casi desaparece. Engrosarlo hace que el modelo
+           lo reconozca igual que un trazo de ratón. */
+        for (let p = 0; p < CAMARA.dilatacion; p++) {
+            const copia = esTinta.slice();
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < W; x++) {
+                    if (copia[y * W + x]) continue;
+                    if ((x > 0 && copia[y * W + x - 1]) ||
+                        (x < W - 1 && copia[y * W + x + 1]) ||
+                        (y > 0 && copia[(y - 1) * W + x]) ||
+                        (y < H - 1 && copia[(y + 1) * W + x])) {
+                        esTinta[y * W + x] = 1;
+                    }
+                }
+            }
+        }
+
+        return esTinta;
+    }
+
+    /* Vuelca la máscara al canvas y devuelve la fracción de tinta (0..1).
+       Dilata ligeramente el trazo (grosor) para acercarlo al de Quick, Draw!,
+       cuyo trazo es más ancho que el de un rotulador fino. */
+    function pintarMascara(esTinta, W, H) {
+        const img = ctxMascara.createImageData(W, H);
+        const datos = img.data;
+        let tinta = 0;
+        for (let i = 0; i < W * H; i++) {
+            const v = esTinta[i] ? 0 : 255;
+            if (esTinta[i]) tinta++;
+            const p = i * 4;
+            datos[p] = v;
+            datos[p + 1] = v;
+            datos[p + 2] = v;
+            datos[p + 3] = 255;
+        }
+        ctxMascara.putImageData(img, 0, 0);
+        return tinta / (W * H);
+    }
+
+    function dibujarPreviewProcesado() {
+        if (!ctxProcesado) return;
+        ctxProcesado.imageSmoothingEnabled = false;
+        ctxProcesado.fillStyle = "#ffffff";
+        ctxProcesado.fillRect(0, 0, elCanvasProcesado.width, elCanvasProcesado.height);
+        if (canvasMascara.width && canvasMascara.height) {
+            ctxProcesado.drawImage(
+                canvasMascara,
+                0, 0, canvasMascara.width, canvasMascara.height,
+                0, 0, elCanvasProcesado.width, elCanvasProcesado.height
+            );
+        }
+    }
+
+    /* Huella COARSE de una máscara: sirve para saber si el dibujo cambió sin
+       guardar la imagen entera. Se cuantiza (bbox a 5% y fracción en %) porque
+       un hash exacto cambiaría en cada frame por el simple temblor de la
+       cámara, y la histéresis nunca llegaría a considerarlo "estable". */
+    function firmaMascara(esTinta, W, H) {
+        let minX = W, minY = H, maxX = -1, maxY = -1, cuenta = 0;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                if (!esTinta[y * W + x]) continue;
+                cuenta++;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        if (cuenta === 0) return "0";
+
+        const col = (v) => Math.round((v / W) * 20); // 20 franjas horizontales
+        const fil = (v) => Math.round((v / H) * 20); // 20 franjas verticales
+        const porc = Math.round((cuenta / (W * H)) * 100);
+        return [col(minX), fil(minY), col(maxX), fil(maxY), porc].join(":");
+    }
+
+    /* Un tick de análisis: máscara + predicción si hay suficiente tinta */
+    function analizarCamara() {
+        if (ESTADO.modoEntrada !== "pizarron" || !ESTADO.camaraLista) return;
+        if (!ESTADO.calibracion || !ESTADO.calibracion.roi || !ESTADO.referencia) return;
+
+        const roi = ESTADO.calibracion.roi;
+        const { W, H } = dimsMuestreo(roi);
+
+        // La referencia guardada debe ser de esta misma zona y tamaño
+        if (ESTADO.referencia.length !== W * H) {
+            console.warn("[AdivinIA] Referencia de tamaño incorrecto (" +
+                ESTADO.referencia.length + " vs " + (W * H) + "). Se descarta: recalibra.");
+            ESTADO.referencia = null;
+            guardarCalibracion(); // limpia también la copia guardada, para no repetir el aviso
+            mostrarAvisoCamara("Calibración caducada. Pulsa CAPTURAR PIZARRA VACÍA.", false);
+            return;
+        }
+
+        const gris = muestrearRoiGris(roi, W, H);
+        const esTinta = construirMascara(gris, ESTADO.referencia, W, H);
+
+        ajustarCanvas(canvasMascara, W, H);
+        const fraccion = pintarMascara(esTinta, W, H);
+        dibujarPreviewProcesado();
+
+        // Pizarra prácticamente vacía: no molestamos al modelo ni a la voz
+        if (fraccion < CAMARA.umbralMinTinta) {
+            ESTADO.firmaMascara = null;
+            ESTADO.firmaEstable = 0;
+            ESTADO.firmaPredicha = null;
+            return;
+        }
+
+        /* Histéresis: solo predecimos cuando el dibujo lleva varias capturas
+           sin cambiar. Si no, cada frame dispararía una predicción distinta y
+           las barras y la voz temblarían sin parar. */
+        const firma = firmaMascara(esTinta, W, H);
+        if (firma === ESTADO.firmaMascara) {
+            ESTADO.firmaEstable++;
+        } else {
+            ESTADO.firmaMascara = firma;
+            ESTADO.firmaEstable = 1;
+            return;
+        }
+
+        if (ESTADO.firmaEstable < CAMARA.framesEstables) return;
+        if (firma === ESTADO.firmaPredicha) return; // ya se predijo esta forma
+
+        ESTADO.firmaPredicha = firma;
+
+        const valores = normalizarLienzo(canvasMascara);
+        if (!valores) return;
+
+        ejecutarPipeline(valores);
+    }
+
+    function arrancarAnalisisCamara() {
+        pararAnalisisCamara();
+        idAnalisisCamara = setInterval(analizarCamara, Math.round(1000 / CAMARA.fpsAnalisis));
+    }
+
+    function pararAnalisisCamara() {
+        if (idAnalisisCamara !== null) {
+            clearInterval(idAnalisisCamara);
+            idAnalisisCamara = null;
+        }
+    }
+
+    /* ----- Modo de entrada ----- */
+    function guardarModo(modo) {
+        try {
+            localStorage.setItem(CLAVE_LS_MODO, modo);
+        } catch (e) {
+            console.warn("[AdivinIA] No se pudo guardar el modo:", e.message);
+        }
+    }
+
+    function leerModoGuardado() {
+        try {
+            const m = localStorage.getItem(CLAVE_LS_MODO);
+            if (m === "pizarron" || m === "raton") return m;
+        } catch (e) {
+            console.warn("[AdivinIA] No se pudo leer el modo guardado:", e.message);
+        }
+        return MODO_ENTRADA_POR_DEFECTO;
+    }
+
+    async function cambiarModoEntrada(modo) {
+        if (modo !== "pizarron" && modo !== "raton") modo = "raton";
+        ESTADO.modoEntrada = modo;
+        guardarModo(modo);
+        aplicarModoEntrada();
+
+        if (modo === "pizarron") {
+            try {
+                if (!ESTADO.camaraLista) await iniciarCamara();
+                if (!ESTADO.referencia) {
+                    // Falta el paso clave: sin referencia no hay detección posible
+                    mostrarAvisoCamara(
+                        "Deja la pizarra vacía y pulsa CAPTURAR PIZARRA VACÍA para empezar.",
+                        false
+                    );
+                    actualizarEstado("Modo pizarrón: falta capturar la pizarra vacía.", "");
+                } else {
+                    actualizarEstado("Modo pizarrón: cámara activa. Dibuja en la pizarra.", "listo");
+                }
+            } catch (e) {
+                const msg = manejarErrorCamara(e);
+                console.error("[AdivinIA] No se pudo iniciar la cámara:", msg, e);
+                mostrarToast("Sin cámara: paso a modo RATÓN", "error");
+                // Fallback: nunca dejamos la pantalla bloqueada por la cámara
+                await cambiarModoEntrada("raton");
+            }
+        } else {
+            detenerCamara();
+            actualizarEstado("Modo ratón. Dibuja sobre la pantalla.", "");
+        }
+    }
+
+    function aplicarModoEntrada() {
+        const esPizarron = ESTADO.modoEntrada === "pizarron";
+
+        if (elContenedorCamara) elContenedorCamara.hidden = !esPizarron;
+        if (elContenedorLienzo) elContenedorLienzo.hidden = esPizarron;
+
+        if (elBtnModoPizarron) {
+            elBtnModoPizarron.classList.toggle("activo", esPizarron);
+            elBtnModoPizarron.setAttribute("aria-pressed", String(esPizarron));
+        }
+        if (elBtnModoRaton) {
+            elBtnModoRaton.classList.toggle("activo", !esPizarron);
+            elBtnModoRaton.setAttribute("aria-pressed", String(!esPizarron));
+        }
+
+        // Los controles de calibración solo tienen sentido en pizarrón
+        [elBtnCalibrarZona, elBtnCalibrarFondo, elBtnCambiarCamara].forEach((b) => {
+            if (b) b.hidden = !esPizarron;
+        });
     }
 
     /* ======================================================================
