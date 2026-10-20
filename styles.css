@@ -1,45 +1,93 @@
 /* ==========================================================================
    AdivinIA: El Ojo de la Máquina  —  Hoja de estilos
-   Estética: BLUEPRINT (plano técnico de arquitectura)
-   Paleta: azul tinta profundo + líneas cian/blanco + tipografía monoespaciada
+   Estética: BLUEPRINT (plano técnico de arquitectura) — pulida para pantalla pública
+   Paleta: azul tinta profundo + cian luminoso + tipografía técnica
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   1. VARIABLES GLOBALES (cambia aquí los colores si quieres otro estilo)
+   1. VARIABLES GLOBALES
    -------------------------------------------------------------------------- */
 :root {
     /* Fondo azul tinta */
-    --color-fondo:        #061229;
-    --color-fondo-2:      #0b1e42;
-    --color-panel:        rgba(10, 30, 66, 0.72);
-    --color-panel-solido: #0a1e42;
+    --color-fondo:        #040b1c;
+    --color-fondo-2:      #07122c;
+    --color-panel:        radial-gradient(120% 120% at 50% 0%, rgba(77, 216, 255, 0.10) 0%, rgba(9, 24, 58, 0.82) 100%);
+    --color-panel-solido: #09183a;
 
     /* Líneas de plano */
     --color-cian:         #4dd8ff;
-    --color-cian-suave:   #2b7fb8;
-    --color-borde:        rgba(120, 180, 255, 0.45);
-    --color-borde-fuerte: rgba(120, 180, 255, 0.85);
-    --color-grid:         rgba(120, 180, 255, 0.28);
+    --color-cian-brillo:  #7af3ff;
+    --color-cian-suave:   #2f9fd6;
+    --color-borde:        rgba(120, 200, 255, 0.48);
+    --color-borde-fuerte: rgba(122, 243, 255, 0.92);
+    --color-grid:         rgba(94, 186, 255, 0.22);
 
     /* Texto */
-    --color-texto:        #dcecff;
-    --color-texto-tenue:  rgba(200, 225, 255, 0.62);
+    --color-texto:        #e8f6ff;
+    --color-texto-tenue:  rgba(214, 236, 255, 0.72);
     --color-texto-fuerte: #ffffff;
 
     /* Semánticos */
-    --color-ok:           #38e8b0;
-    --color-alerta:       #ffc857;
+    --color-ok:           #3dffb9;
+    --color-alerta:       #ffd166;
     --color-error:        #ff6b6b;
     --color-acento:       #4dd8ff;
 
     /* Predicciones */
-    --color-top1:         #4dd8ff;
-    --color-top2:         #2f7fc4;
-    --color-top3:         #1d4f85;
+    --color-top1:         #7af3ff;
+    --color-top2:         #3aa9e9;
+    --color-top3:         #1f5aa8;
 
     /* Geometría */
-    --radio:              4px;
-    --tipo-mono: "Consolas", "Courier New", "Lucida Console", monospace;
+    --radio:              6px;
+    --tipo-display: "Archivo", "Consolas", "Courier New", monospace;
+    --tipo-mono: "B612 Mono", "Consolas", "Courier New", "Lucida Console", monospace;
+    --sombra-cian:        0 0 0 1px rgba(77, 216, 255, 0.16), 0 18px 60px rgba(18, 90, 170, 0.26), 0 0 90px rgba(77, 216, 255, 0.14);
+    --sombra-fuerte:      0 0 0 1px rgba(122, 243, 255, 0.22), 0 26px 90px rgba(14, 86, 190, 0.32), 0 0 120px rgba(77, 216, 255, 0.18);
+}
+
+/* Fuentes autoalojadas para evitar dependencia de CDN en pantalla pública */
+@font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("./fonts/archivo-var.woff2") format("woff2-variations");
+}
+@font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url("./fonts/archivo-var.woff2") format("woff2-variations");
+}
+@font-face {
+    font-family: "B612";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("./fonts/b612-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "B612";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("./fonts/b612-700.woff2") format("woff2");
+}
+@font-face {
+    font-family: "B612 Mono";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("./fonts/b612-mono-400.woff2") format("woff2");
+}
+@font-face {
+    font-family: "B612 Mono";
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url("./fonts/b612-mono-700.woff2") format("woff2");
 }
 
 /* --------------------------------------------------------------------------
@@ -67,17 +115,21 @@ body {
     font-family: var(--tipo-mono);
     color: var(--color-texto);
     background-color: var(--color-fondo);
-    /* Doble rejilla: laima fina + cuadriculado mayor tipo papel de arquitecto */
+    /* Rejilla técnica con profundidad atmosférica */
     background-image:
+        radial-gradient(140% 140% at 50% 0%, rgba(77, 216, 255, 0.14) 0%, transparent 55%),
+        radial-gradient(120% 120% at 50% 100%, rgba(47, 159, 214, 0.10) 0%, transparent 60%),
         linear-gradient(var(--color-grid) 1px, transparent 1px),
         linear-gradient(90deg, var(--color-grid) 1px, transparent 1px),
-        linear-gradient(rgba(120, 180, 255, 0.08) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(120, 180, 255, 0.08) 1px, transparent 1px);
-    background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
-    background-position: center center;
+        linear-gradient(rgba(94, 186, 255, 0.09) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(94, 186, 255, 0.09) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+    background-position: center center, center center, center center, center center, center center, center center;
+    background-attachment: fixed;
     min-height: 100%;
-    padding: 18px;
+    padding: clamp(12px, 2vw, 24px);
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
 ::selection {
@@ -98,22 +150,22 @@ body {
    3. LAYOUT GENERAL
    -------------------------------------------------------------------------- */
 .contenedor-principal {
-    max-width: 1180px;
+    max-width: min(1360px, 96vw);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: clamp(16px, 2vw, 24px);
 }
 
 .layout-principal {
     display: grid;
-    grid-template-columns: 1.15fr 1fr;
-    gap: 18px;
-    align-items: start;
+    grid-template-columns: 1.25fr 1fr;
+    gap: clamp(16px, 2vw, 26px);
+    align-items: stretch;
 }
 
 /* En pantallas medianas el diseño se apila en una sola columna */
-@media (max-width: 980px) {
+@media (max-width: 1080px) {
     .layout-principal {
         grid-template-columns: 1fr;
     }
@@ -127,11 +179,14 @@ body {
     background: var(--color-panel);
     border: 1px solid var(--color-borde);
     border-radius: var(--radio);
-    padding: 16px;
-    backdrop-filter: blur(3px);
-    box-shadow:
-        0 0 0 1px rgba(0, 0, 0, 0.35),
-        inset 0 0 40px rgba(20, 70, 140, 0.18);
+    padding: clamp(14px, 2vw, 22px);
+    backdrop-filter: blur(6px) saturate(120%);
+    box-shadow: var(--sombra-cian);
+    transition: border-color 180ms ease, box-shadow 220ms ease;
+}
+.panel:hover {
+    border-color: var(--color-borde-fuerte);
+    box-shadow: var(--sombra-fuerte);
 }
 
 /* Marcas de esquina tipo plano técnico (4 "ticks") */
@@ -165,18 +220,21 @@ body {
 }
 
 .panel-titulo {
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 2.5px;
+    font-family: var(--tipo-display);
+    font-size: clamp(12px, 1vw, 14px);
+    font-weight: 800;
+    letter-spacing: 4px;
+    text-transform: uppercase;
     color: var(--color-texto-fuerte);
-    text-shadow: 0 0 12px rgba(77, 216, 255, 0.45);
+    text-shadow: 0 0 18px rgba(122, 243, 255, 0.55);
 }
 
 .panel-codigo {
-    font-size: 10px;
-    letter-spacing: 1.5px;
-    color: var(--color-cian);
-    opacity: 0.75;
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--color-cian-brillo);
+    opacity: 0.8;
 }
 
 /* --------------------------------------------------------------------------
@@ -215,27 +273,31 @@ body {
 }
 
 .titulo-principal .nombre {
-    font-size: clamp(38px, 7vw, 72px);
+    font-family: var(--tipo-display);
+    font-size: clamp(48px, 8vw, 92px);
     font-weight: 800;
-    letter-spacing: 12px;
-    line-height: 1;
+    letter-spacing: clamp(10px, 1.6vw, 18px);
+    line-height: 0.95;
     color: var(--color-texto-fuerte);
-    /* "Grabado" de plano: sombra dura + resplandor cian */
+    text-transform: uppercase;
     text-shadow:
-        2px 2px 0 rgba(77, 216, 255, 0.35),
-        0 0 26px rgba(77, 216, 255, 0.5);
+        0 1px 0 rgba(122, 243, 255, 0.40),
+        0 0 40px rgba(77, 216, 255, 0.55),
+        0 0 120px rgba(77, 216, 255, 0.25);
 }
 
 .titulo-principal .subtitulo {
-    font-size: clamp(11px, 1.6vw, 15px);
-    letter-spacing: 7px;
-    color: var(--color-cian);
+    font-family: var(--tipo-mono);
+    font-size: clamp(12px, 1.8vw, 16px);
+    letter-spacing: clamp(8px, 1.2vw, 12px);
+    text-transform: uppercase;
+    color: var(--color-cian-brillo);
 }
 
 .descripcion {
     margin: 12px 0 16px;
-    font-size: 12.5px;
-    letter-spacing: 1.2px;
+    font-size: clamp(13px, 1.4vw, 15px);
+    letter-spacing: 1.6px;
     color: var(--color-texto-tenue);
 }
 
@@ -245,15 +307,17 @@ body {
 .canvas-contenedor {
     position: relative;
     width: 100%;
-    max-width: 500px;
+    max-width: min(560px, 100%);
     margin: 0 auto;
     /* Caja del "papel": fondo blanco puro para dibujar */
     background: #ffffff;
-    border: 2px solid var(--color-cian);
+    border: 2px solid var(--color-cian-brillo);
     border-radius: 2px;
     box-shadow:
-        0 0 0 4px rgba(6, 18, 41, 0.9),
-        0 0 28px rgba(77, 216, 255, 0.28);
+        0 0 0 6px rgba(4, 11, 28, 0.9),
+        0 0 0 7px rgba(122, 243, 255, 0.24),
+        0 40px 120px rgba(20, 110, 210, 0.28),
+        0 0 160px rgba(77, 216, 255, 0.16);
     overflow: hidden;
 }
 
@@ -315,21 +379,23 @@ body {
     justify-content: center;
     gap: 10px;
     font-family: var(--tipo-mono);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
-    letter-spacing: 2px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
     color: var(--color-texto-fuerte);
-    background: transparent;
-    border: 2px solid var(--color-cian);
+    background: radial-gradient(120% 120% at 50% 0%, rgba(122, 243, 255, 0.16) 0%, transparent 70%);
+    border: 1px solid var(--color-borde-fuerte);
     border-radius: var(--radio);
-    padding: 14px 22px;
+    padding: 16px 26px;
     cursor: pointer;
     overflow: hidden;
     transition:
-        background 0.2s ease,
-        color 0.2s ease,
-        box-shadow 0.2s ease,
-        transform 0.08s ease;
+        background 200ms ease,
+        color 200ms ease,
+        border-color 200ms ease,
+        box-shadow 220ms ease,
+        transform 80ms ease;
 }
 
 /* Barrido de luz tipo "rayado técnico" al pasar el cursor */
@@ -351,8 +417,8 @@ body {
 .btn-blueprint:hover::after { left: 130%; }
 
 .btn-blueprint:hover {
-    background: rgba(77, 216, 255, 0.12);
-    box-shadow: 0 0 22px rgba(77, 216, 255, 0.45);
+    background: radial-gradient(120% 120% at 50% 0%, rgba(122, 243, 255, 0.28) 0%, transparent 72%);
+    box-shadow: 0 0 0 1px rgba(122, 243, 255, 0.26), 0 0 38px rgba(77, 216, 255, 0.38);
 }
 
 .btn-blueprint:active { transform: translateY(2px); }
@@ -467,17 +533,20 @@ body {
 .visualizador-header h3,
 .predicciones-header h3,
 .seccion-tecnica h3 {
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: var(--color-cian);
+    font-family: var(--tipo-display);
+    font-size: clamp(11px, 0.9vw, 12px);
+    font-weight: 800;
+    letter-spacing: 4px;
+    color: var(--color-cian-brillo);
     text-transform: uppercase;
+    text-shadow: 0 0 16px rgba(122, 243, 255, 0.4);
 }
 
 .badge {
     font-size: 9px;
-    letter-spacing: 1.4px;
-    padding: 3px 8px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 4px 10px;
     border: 1px solid var(--color-borde);
     border-radius: 999px;
     color: var(--color-texto-tenue);
@@ -494,7 +563,7 @@ body {
 .badge.listo {
     border-color: var(--color-ok);
     color: var(--color-ok);
-    box-shadow: 0 0 14px rgba(56, 232, 176, 0.3);
+    box-shadow: 0 0 0 1px rgba(61, 255, 185, 0.24), 0 0 18px rgba(61, 255, 185, 0.32);
 }
 
 .badge.error {
@@ -510,13 +579,14 @@ body {
 
 .visualizador-contenedor {
     display: grid;
-    grid-template-columns: minmax(140px, 190px) 1fr;
-    gap: 14px;
+    grid-template-columns: minmax(150px, 210px) 1fr;
+    gap: clamp(12px, 2vw, 18px);
     align-items: center;
-    padding: 12px;
-    border: 1px dashed var(--color-borde);
+    padding: clamp(12px, 2vw, 16px);
+    border: 1px solid rgba(122, 243, 255, 0.28);
     border-radius: var(--radio);
-    background: rgba(4, 14, 33, 0.55);
+    background: radial-gradient(120% 120% at 0% 50%, rgba(77, 216, 255, 0.12) 0%, rgba(4, 12, 32, 0.72) 100%);
+    box-shadow: inset 0 0 60px rgba(20, 90, 170, 0.18);
 }
 
 .canvas-visualizador {
@@ -570,11 +640,15 @@ body {
 }
 
 .prediccion-item {
-    padding: 10px 12px;
-    border: 1px dashed var(--color-borde);
+    padding: clamp(10px, 2vw, 14px) clamp(12px, 2vw, 16px);
+    border: 1px solid rgba(120, 200, 255, 0.32);
     border-radius: var(--radio);
-    background: rgba(4, 14, 33, 0.45);
-    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    background: radial-gradient(120% 120% at 0% 50%, rgba(77, 216, 255, 0.08) 0%, rgba(4, 12, 32, 0.72) 100%);
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 140ms ease;
+}
+.prediccion-item:hover {
+    border-color: var(--color-borde-fuerte);
+    transform: translateY(-1px);
 }
 
 .prediccion-header {
@@ -659,9 +733,9 @@ body {
 
 /* --- El Top 1 destaca sobre los demás --- */
 .prediccion-item[data-rank="1"] {
-    border: 1px solid var(--color-cian);
-    background: rgba(11, 40, 80, 0.6);
-    box-shadow: 0 0 20px rgba(77, 216, 255, 0.22);
+    border: 1px solid var(--color-cian-brillo);
+    background: radial-gradient(120% 120% at 0% 50%, rgba(122, 243, 255, 0.18) 0%, rgba(11, 40, 80, 0.72) 100%);
+    box-shadow: 0 0 0 1px rgba(122, 243, 255, 0.26), 0 0 42px rgba(77, 216, 255, 0.26);
 }
 
 .prediccion-item[data-rank="1"] .barra-contenedor {
@@ -675,9 +749,9 @@ body {
 }
 
 .prediccion-item[data-rank="1"] .prediccion-nombre {
-    font-size: 15px;
-    color: var(--color-cian);
-    text-shadow: 0 0 14px rgba(77, 216, 255, 0.6);
+    font-size: clamp(14px, 1.2vw, 18px);
+    color: var(--color-cian-brillo);
+    text-shadow: 0 0 20px rgba(122, 243, 255, 0.58);
 }
 
 .prediccion-item[data-rank="1"] .prediccion-porcentaje {
@@ -752,9 +826,10 @@ body {
 }
 
 .footer-label {
-    font-size: 9.5px;
-    letter-spacing: 2px;
-    color: var(--color-cian-suave);
+    font-size: 9px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: var(--color-cian-brillo);
     opacity: 0.8;
 }
 
@@ -863,8 +938,8 @@ body {
 /* El botón del modo ACTIVO se ilumina en cian */
 .btn-modo.activo {
     color: var(--color-fondo);
-    background: var(--color-cian);
-    box-shadow: 0 0 20px rgba(77, 216, 255, 0.45);
+    background: linear-gradient(180deg, var(--color-cian-brillo) 0%, var(--color-cian) 100%);
+    box-shadow: 0 0 0 1px rgba(122, 243, 255, 0.36), 0 0 42px rgba(77, 216, 255, 0.48);
 }
 
 .btn-modo.activo .btn-icono { stroke-width: 2.4; }
@@ -873,14 +948,16 @@ body {
 .camara-contenedor {
     position: relative;
     width: 100%;
-    max-width: 500px;
+    max-width: min(560px, 100%);
     margin: 0 auto;
     background: #000;
-    border: 2px solid var(--color-cian);
+    border: 2px solid var(--color-cian-brillo);
     border-radius: 2px;
     box-shadow:
-        0 0 0 4px rgba(6, 18, 41, 0.9),
-        0 0 28px rgba(77, 216, 255, 0.28);
+        0 0 0 6px rgba(4, 11, 28, 0.9),
+        0 0 0 7px rgba(122, 243, 255, 0.24),
+        0 40px 120px rgba(20, 110, 210, 0.28),
+        0 0 160px rgba(77, 216, 255, 0.16);
     overflow: hidden;
 }
 
