@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AdivinIA: El Ojo de la Máquina  —  Lógica de la aplicación
+   Adivina Adivinador  —  Lógica de la aplicación
    --------------------------------------------------------------------------
    Estructura del archivo:
      1. CONFIGURACIÓN  (todo lo que debes personalizar está aquí arriba)
@@ -186,8 +186,8 @@
        CÁMARA / VISIÓN  ★★★ AQUÍ SE AFINA EL MONTAJE ★★★
        ------------------------------------------------------------------
        Estos valores son los que probablemente tengas que retocar con tu
-       pizarra y tu luz reales. La página prueba-camara.html sirve justo para
-       encontrar los buenos sin tocar la app principal.
+       pizarra y tu luz reales. La página tools/prueba-camara.html sirve justo
+       para encontrar los buenos sin tocar la app principal.
 
        - resolucion    : resolución de captura de la webcam.
        - fpsAnalisis   : predicciones por segundo. NO lo pongas a 30: el
@@ -237,7 +237,8 @@
     const elBtnModoRaton = $("btn-modo-raton");
     const elBtnCalibrarZona = $("btn-calibrar-zona");
     const elBtnCalibrarFondo = $("btn-calibrar-fondo");
-    const elBtnCambiarCamara = $("btn-cambiar-camara");
+    const elControlCamara = $("control-camara");
+    const elSelectorCamara = $("selector-camara");
     const elContenedorCamara = $("camara-contenedor");
     const elContenedorLienzo = $("lienzo-contenedor");
     const elVideoCamara = $("video-camara");
@@ -336,6 +337,11 @@ voz: VOZ_POR_DEFECTO,
         // Recupera zona vigilada y pizarra de referencia de sesiones anteriores
         cargarCalibracion();
 
+        /* Rellena el selector de cámaras cuanto antes. Antes del permiso los
+           nombres vienen vacíos, pero al menos el desplegable ya existe y se
+           puede elegir; tras conceder permiso se vuelve a poblar con etiquetas. */
+        enumerarCamaras().then(() => poblarSelectorCamaras(leerCamaraGuardada()));
+
         /* La voz arranca encendida, así que el botón debe verse ya marcado como
            activo; si no, el rótulo miente. */
         elBtnVoz.classList.toggle("activo", ESTADO.voz);
@@ -350,11 +356,11 @@ voz: VOZ_POR_DEFECTO,
         try {
             const modo = leerModoGuardado();
             cambiarModoEntrada(modo).catch((err) => {
-                console.warn("[AdivinIA] No se pudo arrancar en modo pizarrón; paso a ratón:", err.message);
+                console.warn("[Adivina] No se pudo arrancar en modo pizarrón; paso a ratón:", err.message);
                 cambiarModoEntrada("raton").catch(() => {});
             });
         } catch (err) {
-            console.warn("[AdivinIA] No se pudo leer el modo guardado:", err.message);
+            console.warn("[Adivina] No se pudo leer el modo guardado:", err.message);
         }
     }
 
@@ -388,9 +394,9 @@ voz: VOZ_POR_DEFECTO,
             }
 
             CLASES = leidas.map((c) => String(c).trim());
-            console.log("[AdivinIA] Clases cargadas desde class_names.json:", CLASES);
+            console.log("[Adivina] Clases cargadas desde class_names.json:", CLASES);
         } catch (error) {
-            console.warn("[AdivinIA] No se pudo leer class_names.json:", error.message,
+            console.warn("[Adivina] No se pudo leer class_names.json:", error.message,
                         "· se usan las clases por defecto.");
             CLASES = CLASES_POR_DEFECTO.slice();
         }
@@ -790,7 +796,7 @@ voz: VOZ_POR_DEFECTO,
                 actualizarEstado("MODO DEMO: predicciones simuladas (falta ./model/model.json)", "");
             }
         } catch (error) {
-            console.error("[AdivinIA] Error en el pipeline:", error);
+            console.error("[Adivina] Error en el pipeline:", error);
             /* Antes se mostraba SIEMPRE "Ocurrió un error al analizar el
                dibujo", que no dice nada: si algo falla, hay que poder ver por
                qué sin abrir la consola. Recortamos el texto para que quepa en
@@ -860,7 +866,7 @@ voz: VOZ_POR_DEFECTO,
                 .test(error.message || "");
 
             if (esProblemaDeForma && n === 1) {
-                console.warn("[AdivinIA] El modelo no encaja con 1 canal; se reintenta con 3 (RGB).",
+                console.warn("[Adivina] El modelo no encaja con 1 canal; se reintenta con 3 (RGB).",
                             error.message);
                 return predecirConModelo(valores, 3);
             }
@@ -926,7 +932,7 @@ voz: VOZ_POR_DEFECTO,
     /* Simulación de predicciones para probar la interfaz sin modelo.
        ESTO NO ES IA REAL: son números aleatorios con forma de distribución. */
     function predecirDemo(valores) {
-        console.info("[AdivinIA] MODO DEMO activo: las probabilidades son simuladas.");
+        console.info("[Adivina] MODO DEMO activo: las probabilidades son simuladas.");
 
         // Usamos la "cantidad de tinta" para que la simulación cambie al
         // redibujar y no parezca siempre igual.
@@ -1021,18 +1027,18 @@ voz: VOZ_POR_DEFECTO,
                     await tf.setBackend("webgl");
                 }
             } catch (e) {
-                console.warn("[AdivinIA] WebGL no disponible, se usará la CPU:", e);
+                console.warn("[Adivina] WebGL no disponible, se usará la CPU:", e);
                 await tf.setBackend("cpu");
             }
             await tf.ready();
-            console.log("[AdivinIA] Backend:", tf.getBackend());
+            console.log("[Adivina] Backend:", tf.getBackend());
 
             /* --- Comprobación 2: se puede abrir el modelo en MODEL_URL? ---
                Primero leemos el campo "format" del JSON para saber con qué
                función hay que cargarlo, y luego lo cargamos. */
             actualizarEstado("Cargando pesos del modelo...", "procesando");
             ESTADO.formato = await detectarFormatoModelo();
-            console.log("[AdivinIA] Formato del modelo:", ESTADO.formato);
+            console.log("[Adivina] Formato del modelo:", ESTADO.formato);
 
             ESTADO.modelo = ESTADO.formato === "layers"
                 ? await tf.loadLayersModel(MODEL_URL)
@@ -1060,7 +1066,7 @@ voz: VOZ_POR_DEFECTO,
 
                 if (numeroSalidas !== CLASES.length) {
                     console.error(
-                        `[AdivinIA] DESAJUSTE: el modelo devuelve ${numeroSalidas} ` +
+                        `[Adivina] DESAJUSTE: el modelo devuelve ${numeroSalidas} ` +
                         `probabilidades pero hay ${CLASES.length} clases. ` +
                         `Arregla class_names.json para que coincidan.`
                     );
@@ -1070,21 +1076,21 @@ voz: VOZ_POR_DEFECTO,
                     );
                 }
             } catch (error) {
-                console.warn("[AdivinIA] La inferencia de prueba falló:", error.message);
+                console.warn("[Adivina] La inferencia de prueba falló:", error.message);
             }
 
             // --- ¡MODELO LISTO! ---
             cambiarBadge("IA LISTA", "listo");
             actualizarEstado("¡IA Lista para jugar! Dibuja y te adivino.", "listo");
             mostrarToast("IA Lista para jugar", "ok");
-            console.log("[AdivinIA] Modelo cargado.", {
+            console.log("[Adivina] Modelo cargado.", {
                 entrada: ESTADO.formaEntrada,
                 clases: CLASES.length,
                 salidas: numeroSalidas,
                 backend: tf.getBackend()
             });
         } catch (error) {
-            console.error("[AdivinIA] No se pudo cargar el modelo:", error);
+            console.error("[Adivina] No se pudo cargar el modelo:", error);
             ESTADO.cargado = false;
             ESTADO.modelo = null;
 
@@ -1101,7 +1107,7 @@ voz: VOZ_POR_DEFECTO,
                 const corto = error.corto || error.message;
                 actualizarEstado(corto, "error");
                 mostrarToast(corto, "error");
-                console.error("[AdivinIA] INSTRUCCIONES COMPLETAS:\n" + error.message);
+                console.error("[Adivina] INSTRUCCIONES COMPLETAS:\n" + error.message);
             }
         }
     }
@@ -1128,7 +1134,7 @@ voz: VOZ_POR_DEFECTO,
         } catch (error) {
             // Si no se pudo leer el JSON, loadLayersModel()/loadGraphModel()
             // lanzarán un error mucho más claro que este.
-            console.warn("[AdivinIA] No se pudo detectar el formato:", error.message);
+            console.warn("[Adivina] No se pudo detectar el formato:", error.message);
             return FORMATO_POR_DEFECTO;
         }
 
@@ -1160,7 +1166,7 @@ voz: VOZ_POR_DEFECTO,
                     "      --quantize_bytes=2 \\\n" +
                     "      /content/saved_model_dir ./model\n\n" +
                     "Después copia model.json y los .bin a la carpeta model/ " +
-                    "y valida con: node verificar-modelo.js"
+                    "y valida con: node tools/verificar-modelo.js"
                 );
                 // Versión corta para el estado bajo el lienzo y el aviso flotante
                 error.corto = "Modelo de Keras 3: hay que reexportarlo como Graph Model";
@@ -1169,7 +1175,7 @@ voz: VOZ_POR_DEFECTO,
             return "layers"; // Keras 2: este formato sí lo entiende TF.js
         }
 
-        console.warn("[AdivinIA] model.json tiene un 'format' desconocido:", formato);
+        console.warn("[Adivina] model.json tiene un 'format' desconocido:", formato);
         return FORMATO_POR_DEFECTO;
     }
 
@@ -1198,7 +1204,7 @@ voz: VOZ_POR_DEFECTO,
                 }
             }
         } catch (e) {
-            console.warn("[AdivinIA] No se pudo leer la forma de entrada:", e);
+            console.warn("[Adivina] No se pudo leer la forma de entrada:", e);
         }
         return null;
     }
@@ -1228,16 +1234,16 @@ voz: VOZ_POR_DEFECTO,
         if (elBtnCalibrarFondo) {
             elBtnCalibrarFondo.addEventListener("click", () => {
                 capturarReferencia().catch((err) => {
-                    console.error("[AdivinIA] Error capturando referencia:", err);
+                    console.error("[Adivina] Error capturando referencia:", err);
                     mostrarToast("No se pudo capturar la referencia", "error");
                 });
             });
         }
-        if (elBtnCambiarCamara) {
-            elBtnCambiarCamara.addEventListener("click", () => {
-                cambiarCamaraDisponible().catch((err) => {
+        if (elSelectorCamara) {
+            elSelectorCamara.addEventListener("change", () => {
+                seleccionarCamara(elSelectorCamara.value).catch((err) => {
                     mostrarToast("No se pudo cambiar de cámara", "error");
-                    console.warn("[AdivinIA] cambiarCamaraDisponible:", err.message);
+                    console.warn("[Adivina] seleccionarCamara:", err.message);
                 });
             });
         }
@@ -1349,7 +1355,7 @@ voz: VOZ_POR_DEFECTO,
             frase.pitch = 1.05;
             window.speechSynthesis.speak(frase);
         } catch (e) {
-            console.warn("[AdivinIA] Voz no disponible:", e);
+            console.warn("[Adivina] Voz no disponible:", e);
         }
     }
 
@@ -1389,12 +1395,69 @@ voz: VOZ_POR_DEFECTO,
             const dispositivos = await navigator.mediaDevices.enumerateDevices();
             ESTADO.camaras = dispositivos.filter((d) => d.kind === "videoinput");
         } catch (e) {
-            console.warn("[AdivinIA] No se pudieron enumerar las cámaras:", e.message);
+            console.warn("[Adivina] No se pudieron enumerar las cámaras:", e.message);
             ESTADO.camaras = [];
+        }
+        return ESTADO.camaras;
+    }
+
+    function leerCamaraGuardada() {
+        try {
+            return localStorage.getItem(CLAVE_LS_CAMARA) || null;
+        } catch (e) {
+            return null;
         }
     }
 
-    async function pedirStreamCamara() {
+    function guardarCamara(id) {
+        try {
+            if (id) localStorage.setItem(CLAVE_LS_CAMARA, id);
+        } catch (e) {
+            console.warn("[Adivina] No se pudo guardar la cámara:", e.message);
+        }
+    }
+
+    /* Rellena el <select> con las cámaras detectadas. Los nombres (label) solo
+       aparecen tras conceder permiso; hasta entonces mostramos "Cámara N". */
+    function poblarSelectorCamaras(idActual) {
+        if (!elSelectorCamara) return;
+        elSelectorCamara.innerHTML = "";
+
+        if (!ESTADO.camaras.length) {
+            const opcion = document.createElement("option");
+            opcion.value = "";
+            opcion.disabled = true;
+            opcion.selected = true;
+            opcion.textContent = "Concede permiso de cámara…";
+            elSelectorCamara.appendChild(opcion);
+            return;
+        }
+
+        ESTADO.camaras.forEach((cam, i) => {
+            const opcion = document.createElement("option");
+            opcion.value = cam.deviceId;
+            opcion.textContent = cam.label || `Cámara ${i + 1}`;
+            elSelectorCamara.appendChild(opcion);
+        });
+
+        const id = idActual || leerCamaraGuardada();
+        if (id) {
+            const indice = ESTADO.camaras.findIndex((c) => c.deviceId === id);
+            if (indice >= 0) {
+                ESTADO.indiceCamara = indice;
+                elSelectorCamara.value = id;
+            }
+        } else if (ESTADO.camaras[ESTADO.indiceCamara]) {
+            elSelectorCamara.value = ESTADO.camaras[ESTADO.indiceCamara].deviceId;
+        }
+
+        console.info(
+            "[Adivina] Cámaras detectadas:",
+            ESTADO.camaras.map((c, i) => `${i + 1}. ${c.label || "(sin nombre)"} [${c.deviceId.slice(0, 8)}…]`)
+        );
+    }
+
+    async function pedirStreamCamara(preferidoId) {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
             throw new Error("El navegador no soporta getUserMedia para la cámara.");
         }
@@ -1410,9 +1473,10 @@ voz: VOZ_POR_DEFECTO,
             }
         };
 
-        const id = ESTADO.camaras[ESTADO.indiceCamara]
-            && ESTADO.camaras[ESTADO.indiceCamara].deviceId;
-        if (id) restricciones.video.deviceId = { exact: id };
+        /* `ideal` en vez de `exact`: si la cámara guardada ya no está
+           conectada, el navegador cae a la que haya en lugar de fallar. */
+        const id = preferidoId || leerCamaraGuardada();
+        if (id) restricciones.video.deviceId = { ideal: id };
 
         return navigator.mediaDevices.getUserMedia(restricciones);
     }
@@ -1430,14 +1494,14 @@ voz: VOZ_POR_DEFECTO,
         return msg;
     }
 
-    async function iniciarCamara() {
+    async function iniciarCamara(preferidoId) {
         mostrarAvisoCamara("Encendiendo cámara…", false);
 
         // La resolución del canvas sigue a la de captura, para dibujar 1:1
         elCanvasCamara.width = CAMARA.resolucion.width;
         elCanvasCamara.height = CAMARA.resolucion.height;
 
-        const stream = await pedirStreamCamara();
+        const stream = await pedirStreamCamara(preferidoId);
         ESTADO.stream = stream;
         elVideoCamara.srcObject = stream;
 
@@ -1449,11 +1513,17 @@ voz: VOZ_POR_DEFECTO,
         try {
             await elVideoCamara.play();
         } catch (e) {
-            console.warn("[AdivinIA] play() rechazó, seguimos igualmente:", e.message);
+            console.warn("[Adivina] play() rechazó, seguimos igualmente:", e.message);
         }
         await esperarVideoConDatos(elVideoCamara);
 
         await enumerarCamaras();
+
+        // ¿Qué cámara está entregando frames de verdad?
+        const pista = stream.getVideoTracks()[0];
+        const idActual = (pista && pista.getSettings && pista.getSettings().deviceId) || null;
+        poblarSelectorCamaras(idActual);
+
         ESTADO.camaraLista = true;
         ocultarAvisoCamara();
         arrancarBucleCamara();
@@ -1481,16 +1551,37 @@ voz: VOZ_POR_DEFECTO,
         ESTADO.camaraLista = false;
     }
 
-    async function cambiarCamaraDisponible() {
-        await enumerarCamaras();
-        if (ESTADO.camaras.length <= 1) {
-            mostrarToast("Solo hay una cámara disponible", "info");
+    /* Cambia a la cámara elegida en el selector y la recuerda para la próxima vez. */
+    async function seleccionarCamara(deviceId) {
+        // Elegir cámara implica querer ver la pizarra: si estabas en ratón, cambia.
+        if (ESTADO.modoEntrada !== "pizarron") {
+            ESTADO.modoEntrada = "pizarron";
+            guardarModo("pizarron");
+            aplicarModoEntrada();
+        }
+
+        /* Sin id (algunos navegadores lo ocultan hasta dar permiso) arrancamos
+           la cámara por defecto; luego el selector se rellena con las reales. */
+        if (!deviceId) {
+            detenerCamara();
+            try {
+                await iniciarCamara();
+            } catch (e) {
+                manejarErrorCamara(e);
+            }
             return;
         }
-        ESTADO.indiceCamara = (ESTADO.indiceCamara + 1) % ESTADO.camaras.length;
+
+        guardarCamara(deviceId);
         detenerCamara();
-        await iniciarCamara();
-        mostrarToast("Cámara cambiada", "ok");
+        try {
+            await iniciarCamara(deviceId);
+            mostrarToast("Cámara cambiada", "ok");
+        } catch (e) {
+            const msg = manejarErrorCamara(e);
+            console.error("[Adivina] No se pudo abrir la cámara elegida:", msg, e);
+            mostrarToast("No se pudo abrir esa cámara", "error");
+        }
     }
 
     /* ----- Bucle de dibujo del frame (Fase 2) -----
@@ -1753,7 +1844,7 @@ voz: VOZ_POR_DEFECTO,
             };
             localStorage.setItem(CLAVE_LS_CALIBRACION, JSON.stringify(datos));
         } catch (e) {
-            console.warn("[AdivinIA] No se pudo guardar la calibración:", e.message);
+            console.warn("[Adivina] No se pudo guardar la calibración:", e.message);
         }
     }
 
@@ -1769,7 +1860,7 @@ voz: VOZ_POR_DEFECTO,
                 ESTADO.referencia = base64ABytes(datos.referencia);
             }
         } catch (e) {
-            console.warn("[AdivinIA] No se pudo leer la calibración guardada:", e.message);
+            console.warn("[Adivina] No se pudo leer la calibración guardada:", e.message);
         }
     }
 
@@ -1963,7 +2054,7 @@ voz: VOZ_POR_DEFECTO,
 
         // La referencia guardada debe ser de esta misma zona y tamaño
         if (ESTADO.referencia.length !== W * H) {
-            console.warn("[AdivinIA] Referencia de tamaño incorrecto (" +
+            console.warn("[Adivina] Referencia de tamaño incorrecto (" +
                 ESTADO.referencia.length + " vs " + (W * H) + "). Se descarta: recalibra.");
             ESTADO.referencia = null;
             guardarCalibracion(); // limpia también la copia guardada, para no repetir el aviso
@@ -2026,7 +2117,7 @@ voz: VOZ_POR_DEFECTO,
         try {
             localStorage.setItem(CLAVE_LS_MODO, modo);
         } catch (e) {
-            console.warn("[AdivinIA] No se pudo guardar el modo:", e.message);
+            console.warn("[Adivina] No se pudo guardar el modo:", e.message);
         }
     }
 
@@ -2035,7 +2126,7 @@ voz: VOZ_POR_DEFECTO,
             const m = localStorage.getItem(CLAVE_LS_MODO);
             if (m === "pizarron" || m === "raton") return m;
         } catch (e) {
-            console.warn("[AdivinIA] No se pudo leer el modo guardado:", e.message);
+            console.warn("[Adivina] No se pudo leer el modo guardado:", e.message);
         }
         return MODO_ENTRADA_POR_DEFECTO;
     }
@@ -2061,7 +2152,7 @@ voz: VOZ_POR_DEFECTO,
                 }
             } catch (e) {
                 const msg = manejarErrorCamara(e);
-                console.error("[AdivinIA] No se pudo iniciar la cámara:", msg, e);
+                console.error("[Adivina] No se pudo iniciar la cámara:", msg, e);
                 mostrarToast("Sin cámara: paso a modo RATÓN", "error");
                 // Fallback: nunca dejamos la pantalla bloqueada por la cámara
                 await cambiarModoEntrada("raton");
@@ -2088,9 +2179,12 @@ voz: VOZ_POR_DEFECTO,
         }
 
         // Los controles de calibración solo tienen sentido en pizarrón
-        [elBtnCalibrarZona, elBtnCalibrarFondo, elBtnCambiarCamara].forEach((b) => {
+        [elBtnCalibrarZona, elBtnCalibrarFondo].forEach((b) => {
             if (b) b.hidden = !esPizarron;
         });
+        // El selector de cámara se deja SIEMPRE visible: sirve para arrancar el
+        // modo pizarrón o cambiar de cámara aunque ahora mismo estés en ratón.
+        if (elControlCamara) elControlCamara.hidden = false;
     }
 
     /* ======================================================================

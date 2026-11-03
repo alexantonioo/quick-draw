@@ -1,13 +1,13 @@
 /* ==========================================================================
-   Validador de modelo para AdivinIA  —  se ejecuta SIN navegador
+   Validador de modelo para Adivina Adivinador  —  se ejecuta SIN navegador
    --------------------------------------------------------------------------
    Para qué sirve: cargar tu modelo con TensorFlow.js en Node y comprobar que
    (a) se puede deserializar, (b) los 16 pesos aterrizan en la capa correcta y
    (c) el modelo responde con confianza. Un modelo roto se detecta AQUÍ, en 5
    segundos, en vez de delante del público en la feria.
 
-   Uso (desde la carpeta del proyecto):
-       node verificar-modelo.js
+   Uso (desde la raíz del proyecto):
+       node tools/verificar-modelo.js
 
    Si todo va bien you'll ver:
        CARGA: OK
@@ -21,10 +21,11 @@ const path = require("path");
 /* ----------------------------------------------------------------------
    Rutas
    ---------------------------------------------------------------------- */
-const MODELO = process.argv[2] || path.join(__dirname, "model", "model.json");
+const RAIZ = path.join(__dirname, "..");
+const MODELO = process.argv[2] || path.join(RAIZ, "model", "model.json");
 const BIN = MODELO.replace(/model\.json$/, "group1-shard1of1.bin");
 const CLASES_JSON = MODELO.replace(/model\.json$/, "class_names.json");
-const TFJS = path.join(__dirname, "tf.min.js");
+const TFJS = path.join(RAIZ, "tf.min.js");
 
 /* ----------------------------------------------------------------------
    Comprobaciones

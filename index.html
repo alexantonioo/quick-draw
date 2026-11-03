@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AdivinIA: El Ojo de la Máquina</title>
+    <title>Adivina Adivinador</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,7 +13,7 @@
             <div class="linea-decorativa"></div>
             <h1 class="titulo-principal">
                 <span class="etiqueta">PROYECTO:</span>
-                <span class="nombre">ADIVINIA</span>
+                <span class="nombre">ADIVINA ADIVINADOR</span>
                 <span class="subtitulo">EL OJO DE LA MÁQUINA</span>
             </h1>
             <div class="linea-decorativa"></div>
@@ -104,12 +104,11 @@
                         </svg>
                         <span>PIZARRA VACÍA</span>
                     </button>
-                    <button id="btn-cambiar-camara" class="btn-blueprint btn-secundario btn-camara" type="button" title="Cambiar entre las cámaras disponibles" hidden>
-                        <svg class="btn-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>
-                        </svg>
-                        <span>CAMBIAR CÁMARA</span>
-                    </button>
+                    <!-- Selector de cámara (siempre visible; elegir cámara pasa a pizarrón) -->
+                    <label class="control-camara btn-camara" id="control-camara">
+                        <span class="control-camara-label">CÁMARA</span>
+                        <select id="selector-camara" class="selector-camara" title="Elige la cámara a usar"></select>
+                    </label>
                 </div>
                 
                 <div class="estado-dibujo" id="estado-dibujo">
@@ -228,13 +227,13 @@
         <footer class="footer-blueprint">
             <div class="footer-content">
                 <div class="footer-item">
-                    <span class="footer-label">FERIA DE CIENCIAS 2026</span>
+                    <span class="footer-label">XXVI Encuentro con la Física, Química, Matemática y Biología</span>
                 </div>
                 <div class="footer-item">
-                    <span class="footer-label">Desarrollado con Vanilla JS + TensorFlow.js</span>
+                    <span class="footer-label">Alex Contreras · Jasneidy Pernia</span>
                 </div>
                 <div class="footer-item">
-                    <span class="footer-label">100% OFFLINE</span>
+                    <span class="footer-label">100% OFFLINE · Vanilla JS + TensorFlow.js</span>
                 </div>
             </div>
         </footer>

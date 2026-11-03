@@ -1,5 +1,5 @@
 /* ==========================================================================
-   AdivinIA: El Ojo de la Máquina  —  Hoja de estilos
+   Adivina Adivinador  —  Hoja de estilos
    Estética: BLUEPRINT (plano técnico de arquitectura) — pulida para pantalla pública
    Paleta: azul tinta profundo + cian luminoso + tipografía técnica
    ========================================================================== */
@@ -274,10 +274,14 @@ body {
 
 .titulo-principal .nombre {
     font-family: var(--tipo-display);
-    font-size: clamp(48px, 8vw, 92px);
+    /* El nombre ahora es más largo ("ADIVINA ADIVINADOR"): bajamos el tamaño
+       y el interletrado para que respire y pueda partirse en dos líneas. */
+    font-size: clamp(34px, 6vw, 74px);
     font-weight: 800;
-    letter-spacing: clamp(10px, 1.6vw, 18px);
-    line-height: 0.95;
+    letter-spacing: clamp(4px, 1vw, 12px);
+    line-height: 0.98;
+    max-width: 100%;
+    text-align: center;
     color: var(--color-texto-fuerte);
     text-transform: uppercase;
     text-shadow:
@@ -1032,10 +1036,51 @@ body {
 
 /* Botones de calibración: se ocultan/muestran con el modo (ver [hidden] global) */
 
+/* Selector de cámara: misma familia visual que los botones blueprint */
+.control-camara {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 14px;
+    background: radial-gradient(120% 120% at 50% 0%, rgba(122, 243, 255, 0.12) 0%, transparent 70%);
+    border: 1px solid var(--color-borde-fuerte);
+    border-radius: var(--radio);
+}
+
+.control-camara-label {
+    font-family: var(--tipo-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--color-cian);
+}
+
+.selector-camara {
+    min-width: 190px;
+    max-width: 260px;
+    padding: 4px 6px;
+    font-family: var(--tipo-mono);
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: var(--color-texto-fuerte);
+    background: var(--color-fondo-2);
+    border: 1px solid var(--color-borde);
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.selector-camara:hover { border-color: var(--color-cian); }
+
+.selector-camara option {
+    background: var(--color-fondo-2);
+    color: var(--color-texto-fuerte);
+}
+
 /* En pantallas estrechas el minicuadro estorba; se reduce */
 @media (max-width: 560px) {
     #canvas-procesado { width: 78px; height: 78px; }
     .dibujo-procesado-titulo { display: none; }
+    .selector-camara { min-width: 130px; }
 }
 
 /* --------------------------------------------------------------------------

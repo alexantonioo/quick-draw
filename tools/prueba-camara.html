@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AdivinIA · Prueba de cámara</title>
+<title>Adivina Adivinador · Prueba de cámara</title>
 <style>
     :root {
         --fondo: #061229;
@@ -74,7 +74,7 @@
 </style>
 </head>
 <body>
-    <h1>AdivinIA · Prueba de cámara</h1>
+    <h1>Adivina Adivinador · Prueba de cámara</h1>
     <p class="sub">
         Página de afinado: sirve para ajustar la luz, marcar la zona de la pizarra
         y encontrar el umbral de tinta antes de usar el modo pizarrón en la app.
@@ -86,6 +86,11 @@
             <video id="video" playsinline muted autoplay></video>
             <canvas id="cam" width="640" height="480"></canvas>
             <div class="controles">
+                <label>Cámara:
+                    <select id="selector-camara" style="width:100%;padding:6px;margin-top:4px;font-family:inherit;background:#061229;color:#dcecff;border:1px solid rgba(120,180,255,.45);border-radius:2px;">
+                        <option value="">(selecciona al encender)</option>
+                    </select>
+                </label>
                 <button id="btn-start">ENCENDER CÁMARA</button>
                 <button id="btn-zona" class="sec">MARCAR ZONA (arrastra en la cámara)</button>
             </div>
@@ -249,20 +254,49 @@
         );
     }
 
-    document.getElementById("btn-start").addEventListener("click", async () => {
+    const elSelectorCamara = document.getElementById("selector-camara");
+
+    async function poblarCamaras() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                audio: false,
-                video: { width: { ideal: 640 }, height: { ideal: 480 } }
+            const dispositivos = await navigator.mediaDevices.enumerateDevices();
+            const cams = dispositivos.filter((d) => d.kind === "videoinput");
+            const anterior = elSelectorCamara.value;
+            elSelectorCamara.innerHTML = "";
+            cams.forEach((cam, i) => {
+                const op = document.createElement("option");
+                op.value = cam.deviceId;
+                op.textContent = cam.label || "Cámara " + (i + 1);
+                elSelectorCamara.appendChild(op);
             });
+            if (anterior) elSelectorCamara.value = anterior;
+        } catch (e) {
+            setEstado("No se pudieron listar las cámaras: " + e.message, "mal");
+        }
+    }
+
+    async function encenderCamara() {
+        try {
+            if (window.__stream) {
+                window.__stream.getTracks().forEach((t) => t.stop());
+                window.__stream = null;
+            }
+            const id = elSelectorCamara.value;
+            const video = { width: { ideal: 640 }, height: { ideal: 480 } };
+            if (id) video.deviceId = { ideal: id };
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
             elVideo.srcObject = stream;
             window.__stream = stream;
             await elVideo.play();
+            await poblarCamaras();
             setEstado("Cámara encendida. Deja la pizarra vacía y pulsa CAPTURAR PIZARRA VACÍA.", "ok");
         } catch (e) {
             setEstado("No se pudo encender la cámara: " + e.message, "mal");
         }
-    });
+    }
+
+    document.getElementById("btn-start").addEventListener("click", encenderCamara);
+    elSelectorCamara.addEventListener("change", encenderCamara);
 
     document.getElementById("btn-fondo").addEventListener("click", async () => {
         if (!elVideo.videoWidth) { setEstado("Enciende la cámara primero.", "mal"); return; }
