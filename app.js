@@ -249,6 +249,7 @@
     const elEstado = $("estado-dibujo");
     const elBadge = $("badge-estado");
     const elToastContenedor = $("toast-contenedor");
+    const elAvisoGuardado = $("aviso-guardado");
     const elLatencia = $("tech-latencia");
     const elContenedorPredicciones = $("predicciones-lista");
     const elBrillo1 = $("brillo-1");
@@ -296,7 +297,11 @@ voz: VOZ_POR_DEFECTO,
         valoresPendientes: undefined,
         firmaMascara: null,
         firmaEstable: 0,
-        firmaPredicha: null
+        firmaPredicha: null,
+        ultimoRegistro: null,
+        contadorRegistros: 0,
+        carpetaRegistros: null,
+        guardandoRegistro: false
     };
 
     /* Contextos 2D */
@@ -786,6 +791,11 @@ voz: VOZ_POR_DEFECTO,
             elLatencia.textContent = `${latencia.toFixed(1)} ms`;
 
             const top3 = obtenerTop3(probabilidades);
+            try {
+                registrarUltimaPrediccion(valores, top3, latencia);
+            } catch (e) {
+                console.warn("[Adivina] No se pudo preparar el registro:", e);
+            }
             actualizarBarras(top3.map((t) => t.nombre),
                              top3.map((t) => t.probabilidad));
             hablar(top3[0]);
@@ -964,6 +974,7 @@ voz: VOZ_POR_DEFECTO,
 
         return indices.slice(0, 3).map((item) => ({
             indice: item.indice,
+            clave: CLASES[item.indice] || null,
             // La clave interna va sin tildes ("corazon"); aquí se muestra el
             // nombre con tildes y mayúscula ("Corazón"). Si el modelo tiene más
             // salidas que CLASES, no rompemos la vista.
@@ -1217,8 +1228,6 @@ voz: VOZ_POR_DEFECTO,
     function registrarEventosUI() {
         elBtnLimpiar.addEventListener("click", limpiarLienzo);
 
-        elBtnLimpiar.addEventListener("click", limpiarLienzo);
-
         /* Botones de modo de entrada: ratón / pizarrón */
         elBtnModoRaton.addEventListener("click", () => {
             cambiarModoEntrada("raton");
@@ -1272,10 +1281,23 @@ voz: VOZ_POR_DEFECTO,
             cargarVozEspanol();
         }
 
-        // Atajos: ESPACIO o la tecla C borran el lienzo
+        // Atajos: ESPACIO o C borran el lienzo; G guarda un registro de feria
         document.addEventListener("keydown", (e) => {
-            const esBoton = document.activeElement && document.activeElement.tagName === "BUTTON";
-            if ((e.code === "Space" || e.key.toLowerCase() === "c") && !esBoton) {
+            const activo = document.activeElement;
+            const tag = activo ? activo.tagName : "";
+            const esCampo = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+                || (activo && activo.isContentEditable);
+            const esBoton = tag === "BUTTON";
+
+            if (e.key.toLowerCase() === "g" && !esCampo
+                && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                if (e.repeat) return;
+                e.preventDefault();
+                guardarRegistroActual();
+                return;
+            }
+
+            if ((e.code === "Space" || e.key.toLowerCase() === "c") && !esBoton && !esCampo) {
                 e.preventDefault();
                 limpiarLienzo();
             }
@@ -2110,6 +2132,265 @@ voz: VOZ_POR_DEFECTO,
             clearInterval(idAnalisisCamara);
             idAnalisisCamara = null;
         }
+    }
+
+    /* ----- Registros de feria (tecla G) ----- */
+    let temporizadorAvisoGuardado = null;
+
+    function registrarUltimaPrediccion(valores, top3, latencia) {
+        const modo = ESTADO.modoEntrada;
+        const registro = {
+            fecha: new Date(),
+            modo,
+            top3: top3.map((t) => ({
+                clave: t.clave,
+                nombre: t.nombre,
+                probabilidad: t.probabilidad
+            })),
+            latencia,
+            valores: new Float32Array(valores),
+            fuente: null,
+            mascara: null
+        };
+
+        if (modo === "pizarron") {
+            const roi = (ESTADO.calibracion && ESTADO.calibracion.roi) || zonaPorDefecto();
+            if (roi && roi.w > 0 && roi.h > 0) {
+                const c = document.createElement("canvas");
+                c.width = roi.w;
+                c.height = roi.h;
+                c.getContext("2d").drawImage(
+                    elCanvasCamara,
+                    roi.x, roi.y, roi.w, roi.h,
+                    0, 0, roi.w, roi.h
+                );
+                registro.fuente = c;
+            }
+            if (canvasMascara.width && canvasMascara.height) {
+                const m = document.createElement("canvas");
+                m.width = canvasMascara.width;
+                m.height = canvasMascara.height;
+                m.getContext("2d").drawImage(canvasMascara, 0, 0);
+                registro.mascara = m;
+            }
+        } else {
+            const c = document.createElement("canvas");
+            c.width = elLienzo.width;
+            c.height = elLienzo.height;
+            c.getContext("2d").drawImage(elLienzo, 0, 0);
+            registro.fuente = c;
+        }
+
+        ESTADO.ultimoRegistro = registro;
+    }
+
+    async function guardarRegistroActual() {
+        if (ESTADO.guardandoRegistro) return;
+        const reg = ESTADO.ultimoRegistro;
+        if (!reg) {
+            mostrarMiniAviso("Dibuja primero");
+            return;
+        }
+
+        ESTADO.guardandoRegistro = true;
+        mostrarMiniAviso("Guardando…");
+
+        let handle = ESTADO.carpetaRegistros;
+        if (!handle && "showDirectoryPicker" in window) {
+            try {
+                handle = await window.showDirectoryPicker({
+                    id: "adivina-registros",
+                    mode: "readwrite",
+                    startIn: "downloads"
+                });
+                ESTADO.carpetaRegistros = handle;
+            } catch (e) {
+                console.warn("[Adivina] Sin carpeta elegida; se usará Descargas:", e.message);
+                handle = null;
+            }
+        }
+
+        try {
+            const blob = await crearImagenRegistro(reg);
+            const nombre = nombreArchivoRegistro(reg);
+
+            if (handle) {
+                const archivo = await handle.getFileHandle(nombre, { create: true });
+                const escritura = await archivo.createWritable();
+                await escritura.write(blob);
+                await escritura.close();
+            } else {
+                descargarBlob(blob, nombre);
+            }
+
+            ESTADO.contadorRegistros += 1;
+            mostrarMiniAviso(handle
+                ? `✓ Guardado #${ESTADO.contadorRegistros}`
+                : `✓ Descargas #${ESTADO.contadorRegistros}`);
+        } catch (e) {
+            console.error("[Adivina] No se pudo guardar el registro:", e);
+            mostrarMiniAviso("✗ No se pudo guardar");
+        } finally {
+            ESTADO.guardandoRegistro = false;
+        }
+    }
+
+    function crearImagenRegistro(reg) {
+        return new Promise((resolve, reject) => {
+            const W = 1280;
+            const H = 470;
+            const c = document.createElement("canvas");
+            c.width = W;
+            c.height = H;
+            const g = c.getContext("2d");
+
+            g.fillStyle = "#ffffff";
+            g.fillRect(0, 0, W, H);
+
+            g.fillStyle = "#0a1e42";
+            g.font = "700 26px 'Segoe UI', system-ui, sans-serif";
+            g.fillText("Adivina Adivinador · registro de feria", 30, 42);
+
+            g.fillStyle = "#5a6b85";
+            g.font = "15px 'Segoe UI', system-ui, sans-serif";
+            let fecha;
+            try {
+                fecha = reg.fecha.toLocaleString("es-VE", {
+                    dateStyle: "medium",
+                    timeStyle: "medium"
+                });
+            } catch (e) {
+                fecha = reg.fecha.toLocaleString();
+            }
+            g.fillText(fecha, 30, 68);
+
+            const y = 100;
+            const lado = 280;
+            const x1 = 30;
+            const x2 = x1 + lado + 20;
+            const x3 = x2 + lado + 20;
+
+            dibujarPanelRegistro(g, x1, y, lado, "Fuente", reg.fuente, false, null, "Sin imagen");
+            dibujarPanelRegistro(
+                g, x2, y, lado, "Máscara de tinta", reg.mascara, false, null,
+                reg.modo === "pizarron" ? "Sin máscara" : "Solo modo pizarrón"
+            );
+            dibujarPanelRegistro(g, x3, y, lado, "Entrada 28×28 (blanco = trazo)", null, true, reg.valores, "");
+
+            const tx = x3 + lado + 30;
+            g.fillStyle = "#0a1e42";
+            g.font = "700 20px 'Segoe UI', system-ui, sans-serif";
+            g.fillText("Predicción", tx, y + 18);
+
+            g.font = "15px 'Segoe UI', system-ui, sans-serif";
+            g.fillStyle = "#33445c";
+            g.fillText(`Modo: ${reg.modo === "pizarron" ? "Pizarrón (cámara)" : "Ratón"}`, tx, y + 50);
+            g.fillText(`Latencia: ${reg.latencia.toFixed(1)} ms`, tx, y + 76);
+
+            const colores = ["#0b7a3b", "#4a5a72", "#6b778c"];
+            reg.top3.forEach((t, i) => {
+                const ty = y + 118 + i * 42;
+                g.fillStyle = colores[i] || "#6b778c";
+                g.font = i === 0
+                    ? "700 18px 'Segoe UI', system-ui, sans-serif"
+                    : "15px 'Segoe UI', system-ui, sans-serif";
+                const pct = (t.probabilidad * 100).toFixed(1);
+                g.fillText(`${i + 1}. ${t.nombre} — ${pct}%`, tx, ty);
+                if (t.clave) {
+                    g.fillStyle = "#8a94a6";
+                    g.font = "12px 'Consolas', monospace";
+                    g.fillText(`clave: ${t.clave}`, tx, ty + 16);
+                }
+            });
+
+            g.fillStyle = "#9aa4b5";
+            g.font = "12px 'Consolas', monospace";
+            g.fillText("Guardado con la tecla G · datos 100% locales", 30, H - 18);
+
+            c.toBlob((blob) => {
+                if (blob) resolve(blob);
+                else reject(new Error("No se pudo generar el PNG."));
+            }, "image/png");
+        });
+    }
+
+    function dibujarPanelRegistro(g, x, y, lado, titulo, fuente, esTensor, valores, textoVacio) {
+        g.fillStyle = "#5a6b85";
+        g.font = "700 11px 'Segoe UI', system-ui, sans-serif";
+        g.fillText(titulo.toUpperCase(), x, y - 8);
+
+        g.fillStyle = "#ffffff";
+        g.fillRect(x, y, lado, lado);
+
+        if (esTensor && valores) {
+            const off = document.createElement("canvas");
+            off.width = off.height = TAMANO_ENTRADA;
+            const og = off.getContext("2d");
+            const img = og.createImageData(TAMANO_ENTRADA, TAMANO_ENTRADA);
+            for (let i = 0; i < valores.length; i++) {
+                const v = Math.max(0, Math.min(255, Math.round(valores[i] * 255)));
+                const p = i * 4;
+                img.data[p] = v;
+                img.data[p + 1] = v;
+                img.data[p + 2] = v;
+                img.data[p + 3] = 255;
+            }
+            og.putImageData(img, 0, 0);
+            g.save();
+            g.imageSmoothingEnabled = false;
+            g.drawImage(off, 0, 0, TAMANO_ENTRADA, TAMANO_ENTRADA, x, y, lado, lado);
+            g.restore();
+        } else if (fuente && fuente.width && fuente.height) {
+            const k = Math.min(lado / fuente.width, lado / fuente.height);
+            const w = fuente.width * k;
+            const h = fuente.height * k;
+            g.drawImage(fuente, x + (lado - w) / 2, y + (lado - h) / 2, w, h);
+        } else {
+            g.fillStyle = "#f2f5f9";
+            g.fillRect(x, y, lado, lado);
+            g.fillStyle = "#9aa4b5";
+            g.font = "13px 'Segoe UI', system-ui, sans-serif";
+            g.textAlign = "center";
+            g.fillText(textoVacio || "—", x + lado / 2, y + lado / 2);
+            g.textAlign = "start";
+        }
+
+        g.strokeStyle = "#c9d2e0";
+        g.lineWidth = 1;
+        g.strokeRect(x + 0.5, y + 0.5, lado - 1, lado - 1);
+    }
+
+    function nombreArchivoRegistro(reg) {
+        const d = reg.fecha;
+        const p = (n) => String(n).padStart(2, "0");
+        const sello = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
+            + `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+            + `-${String(d.getMilliseconds()).padStart(3, "0")}`;
+        const clave = reg.top3 && reg.top3[0] && reg.top3[0].clave
+            ? reg.top3[0].clave
+            : "sin-clase";
+        return `adivina-${sello}-${clave}.png`;
+    }
+
+    function descargarBlob(blob, nombre) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = nombre;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function mostrarMiniAviso(texto) {
+        if (!elAvisoGuardado) return;
+        elAvisoGuardado.textContent = texto;
+        elAvisoGuardado.classList.add("visible");
+        clearTimeout(temporizadorAvisoGuardado);
+        temporizadorAvisoGuardado = setTimeout(() => {
+            elAvisoGuardado.classList.remove("visible");
+        }, 1600);
     }
 
     /* ----- Modo de entrada ----- */

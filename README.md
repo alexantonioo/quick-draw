@@ -29,6 +29,7 @@ Para el **XXVI Encuentro con la Física, Química, Matemática y Biología**.
 - Preprocesamiento con recorte automático del trazo, centrado y normalización.
 - Calibración guiada de la pizarra: zona vigilada + captura de la pizarra vacía.
 - Selector de cámara para elegir entre la integrada y una webcam externa.
+- Registro de cada predicción con la tecla **G**: guarda un PNG local con el trazo, la máscara, la entrada 28×28 y el Top 3.
 - Interfaz tipo plano técnico (blueprint), pensada para verse desde lejos en una feria.
 - **Sin dependencias externas en tiempo de ejecución:** TensorFlow.js, fuentes y modelo están incluidos en el proyecto.
 
@@ -178,6 +179,26 @@ http://localhost:8000
 8. Si cambias la iluminación, la zona o la cámara, vuelve a capturar la pizarra vacía.
 
 > El modo **Ratón** siempre está disponible como respaldo si la cámara falla.
+
+### 7. Guardar registros para la feria (tecla G)
+
+Después de que la app muestre una predicción (en cualquiera de los dos modos), pulsa **G**.
+La primera vez de cada sesión, el navegador pedirá elegir una carpeta local; después guardará
+sin volver a preguntar. Si cancelas o el navegador no permite elegir carpeta, el PNG se
+descargará a la carpeta **Descargas**.
+
+Cada registro es un PNG con:
+
+- La fuente (el lienzo o el recorte de la cámara).
+- La máscara de tinta (solo en modo Pizarrón).
+- La entrada real de 28×28 que vio la red (blanco = trazo).
+- Fecha, modo, latencia y el Top 3 con sus porcentajes.
+
+El nombre del archivo incluye fecha, hora y la clase ganadora, por ejemplo:
+`adivina-20261103-194212-345-gato.png`.
+
+En la esquina inferior derecha aparece un aviso minúsculo (`✓ Guardado #1`) durante ~1,6 s.
+No se envía nada a Internet: todo se guarda en tu equipo.
 
 ---
 

@@ -900,6 +900,30 @@ body {
     to { opacity: 0; transform: translateX(40px); }
 }
 
+/* Aviso minúsculo y discreto al guardar un registro con la tecla G.
+   No usa [hidden] porque el fundido se controla con opacity. */
+.aviso-guardado {
+    position: fixed;
+    right: 14px;
+    bottom: 12px;
+    z-index: 1000;
+    padding: 4px 8px;
+    font-family: var(--tipo-mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--color-cian-brillo);
+    background: rgba(6, 18, 41, 0.82);
+    border: 1px solid var(--color-borde);
+    border-radius: 2px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 180ms ease;
+}
+
+.aviso-guardado.visible {
+    opacity: 0.78;
+}
+
 /* --------------------------------------------------------------------------
    14. CÁMARA / PIZARRÓN (modo de entrada por webcam)
    -------------------------------------------------------------------------- */
